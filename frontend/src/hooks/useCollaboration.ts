@@ -35,6 +35,11 @@ export function useCollaboration({
 
   const submitOperation = useCallback(
     (req: SubmitOperationRequest) => {
+      if (!clientRef.current?.connected) {
+        console.warn('[collab] Cannot submit operation: Not connected')
+        return
+      }
+      console.log(`[collab] >>> Submitting ${req.operationType} v${req.baseVersion}`)
       clientRef.current?.publish({
         destination: `/app/documents/${documentId}/operations.submit`,
         body: JSON.stringify(req),
@@ -53,45 +58,62 @@ export function useCollaboration({
     [documentId, sessionId],
   )
 
-  // Callbacks (onOperation, onSession, onPresence, onAccessRevoked) are not in the
-  // dependency array intentionally — reconnecting on every callback change would
-  // break the connection. Callers MUST pass stable references (useCallback or setState).
   useEffect(() => {
     if (!token) return
 
     const userId = parseUserIdFromToken(token)
-
+    
+    // BACKEND ANALYSIS: 
+    // WebSocketConfig.java registers endpoint at "/ws" WITHOUT .withSockJS().
+    // JwtHandshakeInterceptor.java looks for a query parameter named "token".
+    // Therefore, the URL must be EXACTLY "/ws?token=..." without suffixes.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const brokerURL = `${protocol}//${window.location.host}/ws?token=${token}`
+
+    console.log('[collab] Connecting to Native WebSocket:', brokerURL)
+
     const client = new Client({
-      brokerURL: `${protocol}//${window.location.host}/ws?token=${token}`,
-      reconnectDelay: 3000,
-      onConnect: () => {
+      brokerURL,
+      reconnectDelay: 5000,
+      heartbeatIncoming: 4000,
+      heartbeatOutgoing: 4000,
+      onConnect: (frame) => {
+        console.log('[collab] Connected to STOMP broker', frame.headers['server'])
         setConnected(true)
         const subs: StompSubscription[] = []
 
-        // Subscribe to catchup FIRST, before triggering any server-side operations
-        // This ensures the client is listening before the server can enqueue catchup frames
+        // Catchup
         subs.push(
-          client.subscribe(`/user/queue/catchup.${documentId}`, msg =>
-            onOperation(JSON.parse(msg.body)),
-          ),
+          client.subscribe(`/user/queue/catchup.${documentId}`, msg => {
+            const op = JSON.parse(msg.body)
+            console.log(`[collab] <<< Catchup op v${op.serverVersion}`)
+            onOperation(op)
+          }),
         )
 
+        // Session
         subs.push(
           client.subscribe(`/topic/documents/${documentId}/sessions`, msg =>
             onSession(JSON.parse(msg.body)),
           ),
         )
+
+        // Operations
         subs.push(
-          client.subscribe(`/topic/documents/${documentId}/operations`, msg =>
-            onOperation(JSON.parse(msg.body)),
-          ),
+          client.subscribe(`/topic/documents/${documentId}/operations`, msg => {
+            const op = JSON.parse(msg.body)
+            console.log(`[collab] <<< Received ${op.operationType} v${op.serverVersion}`)
+            onOperation(op)
+          }),
         )
+
+        // Presence
         subs.push(
           client.subscribe(`/topic/documents/${documentId}/presence`, msg =>
             onPresence(JSON.parse(msg.body)),
           ),
         )
+
         if (userId) {
           subs.push(
             client.subscribe(
@@ -101,16 +123,24 @@ export function useCollaboration({
           )
         }
 
+        // Join session
         client.publish({
           destination: `/app/documents/${documentId}/sessions.join`,
           body: JSON.stringify({ sessionId }),
         })
       },
-      onDisconnect: () => setConnected(false),
+      onDisconnect: () => {
+        console.log('[collab] Disconnected')
+        setConnected(false)
+      },
+      onStompError: (frame) => {
+        console.error('[collab] STOMP Error:', frame.headers['message'])
+      }
     })
 
     client.beforeConnect = () => {
       client.connectHeaders = {
+        'Authorization': `Bearer ${token}`,
         [`X-Last-Server-Version-${documentId}`]: String(lastServerVersionRef.current),
       }
     }
