@@ -58,7 +58,7 @@ class MetricsConfigTest {
         for (String name : new String[]{
                 "lockAcquisition", "loadDocument", "loadInterveningOps",
                 "otTransformLoop", "perOpJsonParse", "treeApply",
-                "persistOperation", "publishRedis", "publishKafka"}) {
+                "persistOperation", "publishRedis"}) {
             Timer.builder(name).register(registry).record(Duration.ofMillis(1));
         }
 
@@ -67,7 +67,7 @@ class MetricsConfigTest {
         for (String name : new String[]{
                 "lockAcquisition", "loadDocument", "loadInterveningOps",
                 "otTransformLoop", "perOpJsonParse", "treeApply",
-                "persistOperation", "publishRedis", "publishKafka"}) {
+                "persistOperation", "publishRedis"}) {
             assertThat(scrape)
                     .as(name + " must expose p95 quantile gauge in the Prometheus scrape")
                     .contains(name + "_seconds{quantile=\"0.95\"");

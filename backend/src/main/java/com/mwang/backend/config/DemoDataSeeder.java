@@ -64,7 +64,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             "Theme 2 - Growth: Launch referral program targeting a 20% increase in monthly active users by end of quarter.",
             "Theme 3 - Collaboration: Ship real-time collaborative editing to all paid tiers. Target: <200ms p95 operation latency.",
             "Dependencies: Infrastructure team to complete Redis cluster migration by Week 4. Design team to deliver updated editor UI by Week 3.",
-            "Risks: Kafka consumer lag under peak load. Mitigation: partition increase scheduled for Week 2."
+            "Risks: High database latency under peak load. Mitigation: query optimization scheduled for Week 2."
         };
 
         String[] apiGuideTexts = {
@@ -134,7 +134,7 @@ public class DemoDataSeeder implements ApplicationRunner {
         };
 
         String[] kpiTexts = {
-            "Key metrics tracked this quarter: MAU, document creation rate, collaboration session duration, p95 operation latency, Kafka consumer lag.",
+            "Key metrics tracked this quarter: MAU, ..., p95 operation latency, Database connection pool usage.",
             "MAU target: 10,000 by end of Q3. Current: 6,200 (+12% MoM). On track if growth rate holds.",
             "Collaboration session duration median: 8.4 minutes. Users who invite at least one collaborator retain at 2.3x the rate of solo users.",
             "Infrastructure: p95 operation latency at 87ms under 30 concurrent users. Target is <200ms at 100 concurrent users."
@@ -248,6 +248,7 @@ public class DemoDataSeeder implements ApplicationRunner {
 
     private void seedOps(Document doc, User actor, String... texts) {
         for (int i = 0; i < texts.length; i++) {
+            long lamportTime = i + 1L;
             operationRepository.save(DocumentOperation.builder()
                     .document(doc)
                     .actor(actor)
@@ -257,6 +258,8 @@ public class DemoDataSeeder implements ApplicationRunner {
                     .serverVersion((long) (i + 1))
                     .operationType(DocumentOperationType.INSERT_TEXT)
                     .payload("{\"path\":[" + i + "],\"offset\":0,\"text\":\"" + jsonEscape(texts[i]) + "\"}")
+                    .lamportTime(lamportTime)
+                    .vectorClock("{\"" + actor.getId() + "\":" + lamportTime + "}")
                     .build());
         }
     }

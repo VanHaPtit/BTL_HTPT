@@ -2,13 +2,15 @@ package com.mwang.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.mwang.backend.collaboration.AcceptedOperationCommittedEvent;
+import com.mwang.backend.collaboration.AcceptedOperationOutboxService;
 import com.mwang.backend.collaboration.OperationTransformer;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentOperation;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.domain.model.DocumentTree;
-import com.mwang.backend.kafka.AcceptedOperationDomainEvent;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
@@ -26,7 +28,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -40,6 +44,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final OperationTransformer transformer;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final AcceptedOperationOutboxService acceptedOperationOutboxService;
+    private final DocumentCheckpointService checkpointService;
     private final EntityManager entityManager;
     private final Counter conflictedCounter;
     private final Counter noopCounter;
@@ -63,6 +69,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             OperationTransformer transformer,
             ObjectMapper objectMapper,
             ApplicationEventPublisher eventPublisher,
+            AcceptedOperationOutboxService acceptedOperationOutboxService,
+            DocumentCheckpointService checkpointService,
             EntityManager entityManager,
             MeterRegistry meterRegistry) {
         this.documentRepository = documentRepository;
@@ -72,6 +80,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.transformer = transformer;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.acceptedOperationOutboxService = acceptedOperationOutboxService;
+        this.checkpointService = checkpointService;
         this.entityManager = entityManager;
         this.meterRegistry = meterRegistry;
         this.conflictedCounter = meterRegistry.counter("operations.conflicted");
@@ -178,6 +188,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
 
         // 8. Apply to document tree (skip for NO_OP)
         long nextVersion = document.getCurrentVersion() + 1;
+        long nextLamportTime = nextLamportTime(documentId, request);
         if (currentType != DocumentOperationType.NO_OP) {
             long treeStart = System.nanoTime();
             try {
@@ -205,6 +216,8 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
                 .serverVersion(nextVersion)
                 .operationType(currentType)
                 .payload(payloadString(currentPayload))
+                .lamportTime(nextLamportTime)
+                .vectorClock(vectorClockString(nextVectorClock(actor.getId(), request.vectorClock(), nextLamportTime)))
                 .build();
 
         long persistStart = System.nanoTime();
@@ -212,6 +225,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             operationRepository.save(accepted);
             document.setCurrentVersion(nextVersion);
             documentRepository.save(document);
+            checkpointService.createCheckpointIfNeeded(document, nextVersion);
         } finally {
             persistOperationTimer.record(System.nanoTime() - persistStart, java.util.concurrent.TimeUnit.NANOSECONDS);
         }
@@ -220,9 +234,11 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         AcceptedOperationResponse acceptedResponse = new AcceptedOperationResponse(
                 request.operationId(), documentId, nextVersion,
                 currentType, currentPayload, actor.getId(),
-                clientSessionId, accepted.getCreatedAt() != null ? accepted.getCreatedAt() : Instant.now());
+                clientSessionId, accepted.getCreatedAt() != null ? accepted.getCreatedAt() : Instant.now(),
+                nextLamportTime, parseVectorClock(accepted.getVectorClock()));
 
-        eventPublisher.publishEvent(new AcceptedOperationDomainEvent(acceptedResponse, request.baseVersion()));
+        UUID outboxId = acceptedOperationOutboxService.enqueueAcceptedOperation(acceptedResponse);
+        eventPublisher.publishEvent(new AcceptedOperationCommittedEvent(outboxId, acceptedResponse));
 
         return acceptedResponse;
     }
@@ -279,7 +295,9 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         return new AcceptedOperationResponse(
                 op.getOperationId(), documentId, op.getServerVersion(),
                 op.getOperationType(), payload, op.getActor().getId(),
-                op.getClientSessionId(), op.getCreatedAt());
+                op.getClientSessionId(), op.getCreatedAt(),
+                op.getLamportTime() != null ? op.getLamportTime() : 0L,
+                parseVectorClock(op.getVectorClock()));
     }
 
     private String payloadString(JsonNode payload) {
@@ -287,6 +305,42 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize payload", e);
+        }
+    }
+
+    private long nextLamportTime(UUID documentId, SubmitOperationRequest request) {
+        long requestLamport = request.clientLamportTime() != null ? request.clientLamportTime() : 0L;
+        long latestPersisted = operationRepository.findTopByDocumentIdOrderByServerVersionDesc(documentId)
+                .map(DocumentOperation::getLamportTime)
+                .orElse(0L);
+        return Math.max(requestLamport, latestPersisted) + 1;
+    }
+
+    private Map<String, Long> nextVectorClock(UUID actorUserId, Map<String, Long> requestVectorClock, long lamportTime) {
+        Map<String, Long> merged = new LinkedHashMap<>();
+        if (requestVectorClock != null) {
+            merged.putAll(requestVectorClock);
+        }
+        merged.merge(actorUserId.toString(), lamportTime, Math::max);
+        return merged;
+    }
+
+    private String vectorClockString(Map<String, Long> vectorClock) {
+        try {
+            return objectMapper.writeValueAsString(vectorClock);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize vector clock", e);
+        }
+    }
+
+    private Map<String, Long> parseVectorClock(String serialized) {
+        if (serialized == null || serialized.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(serialized, new TypeReference<>() {});
+        } catch (Exception e) {
+            return Map.of();
         }
     }
 }

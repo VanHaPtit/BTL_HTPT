@@ -64,6 +64,12 @@ public class DocumentOperation {
     @Column(nullable = false, columnDefinition = "TEXT", updatable = false)
     private String payload;
 
+    @Column(name = "lamport_time", nullable = false, updatable = false)
+    private Long lamportTime;
+
+    @Column(name = "vector_clock", columnDefinition = "TEXT", updatable = false)
+    private String vectorClock;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

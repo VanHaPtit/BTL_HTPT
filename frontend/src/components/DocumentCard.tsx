@@ -1,3 +1,4 @@
+import React from 'react';
 import { useNavigate } from 'react-router-dom'
 import type { Document } from '../types/document'
 import { documentsApi } from '../api/documents'
@@ -9,7 +10,7 @@ interface Props {
   onDeleteFailed: () => void
 }
 
-const VISIBILITY_COLORS: Record<string, { bg: string, text: string, icon: JSX.Element }> = {
+const VISIBILITY_COLORS: Record<string, { bg: string, text: string, icon: React.JSX.Element }> = {
   PRIVATE: { 
     bg: 'bg-slate-100', 
     text: 'text-slate-500',

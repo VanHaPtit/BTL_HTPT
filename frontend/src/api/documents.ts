@@ -1,5 +1,6 @@
 import { apiClient } from './client'
 import type { Document, DocumentPage, DocumentScope, Visibility } from '../types/document'
+import type { OperationHistoryPage } from '../types/collaboration'
 
 export interface CreateDocumentBody { title: string; visibility: Visibility; content?: string }
 export interface UpdateDocumentBody { title?: string; visibility?: Visibility; content?: string }
@@ -16,6 +17,11 @@ export const documentsApi = {
 
   update: (id: string, body: UpdateDocumentBody) =>
     apiClient.put<Document>(`/documents/${id}`, body).then(r => r.data),
+
+  getOperations: (id: string, params?: { sinceVersion?: number; limit?: number }) =>
+    apiClient
+      .get<OperationHistoryPage>(`/documents/${id}/operations`, { params })
+      .then(r => r.data),
 
   delete: (id: string) =>
     apiClient.delete(`/documents/${id}`),

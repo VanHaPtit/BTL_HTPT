@@ -4,10 +4,10 @@ WORKDIR /app/backend
 COPY backend/.mvn/ .mvn/
 COPY backend/mvnw .
 COPY backend/pom.xml .
-RUN chmod +x mvnw && ./mvnw -q -DskipTests dependency:go-offline
+RUN chmod +x mvnw && ./mvnw -q -Dmaven.test.skip=true dependency:go-offline
 
 COPY backend/src src/
-RUN ./mvnw -q -DskipTests package
+RUN ./mvnw -q -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:23-jre
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*

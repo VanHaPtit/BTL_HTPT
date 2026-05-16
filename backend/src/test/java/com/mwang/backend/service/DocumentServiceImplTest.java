@@ -188,7 +188,8 @@ class DocumentServiceImplTest {
 
         when(currentUserProvider.requireCurrentUser(any(jakarta.servlet.http.HttpServletRequest.class))).thenReturn(actor);
         when(documentRepository.findById(existing.getId())).thenReturn(Optional.of(existing));
-        doNothing().when(documentAuthorizationService).assertOwner(existing, actor);
+        doNothing().when(documentAuthorizationService).assertCanWrite(existing, actor);
+        when(documentAuthorizationService.resolveEffectivePermission(existing, actor)).thenReturn("OWNER");
         when(documentRepository.save(existing)).thenReturn(existing);
         when(documentMapper.toResponse(existing, "OWNER")).thenReturn(mapped);
 

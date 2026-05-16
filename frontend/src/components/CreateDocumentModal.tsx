@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { documentsApi } from '../api/documents'
 import type { Visibility } from '../types/document'
+import { plainTextToBackendContent } from '../utils/documentContent'
 
 interface Props { onCreated: () => void; onClose: () => void }
 
@@ -17,7 +18,11 @@ export function CreateDocumentModal({ onCreated, onClose }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await documentsApi.create({ title, visibility, content })
+      await documentsApi.create({
+        title,
+        visibility,
+        content: plainTextToBackendContent(content),
+      })
       onCreated()
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })

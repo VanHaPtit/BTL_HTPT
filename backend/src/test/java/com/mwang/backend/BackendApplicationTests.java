@@ -10,6 +10,6 @@ class BackendApplicationTests extends AbstractIntegrationTest {
     @Test
     void contextLoads() {
         // Verifies the full Spring application context starts successfully
-        // against real Postgres, Redis, and Kafka containers.
+        // against real Postgres and Redis containers.
     }
 }

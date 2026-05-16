@@ -37,9 +37,7 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DocumentResponse create(CreateDocumentRequest request, HttpServletRequest httpRequest) {
         User actor = currentUserProvider.requireCurrentUser(httpRequest);
-        String content = (request.content() == null || request.content().isBlank())
-                ? "{\"children\":[]}"
-                : request.content();
+        String content = normalizeContent(request.content());
         Document saved = documentRepository.save(Document.builder()
                 .title(request.title())
                 .content(content)
@@ -80,9 +78,15 @@ public class DocumentServiceImpl implements DocumentService {
                 .orElseThrow(() -> new DocumentNotFoundException(id));
         documentAuthorizationService.assertCanWrite(document, actor);
 
-        document.setTitle(request.title());
-        document.setContent(request.content());
-        document.setVisibility(defaultVisibility(request.visibility()));
+        if (request.title() != null) {
+            document.setTitle(request.title());
+        }
+        if (request.content() != null) {
+            document.setContent(normalizeContent(request.content()));
+        }
+        if (request.visibility() != null) {
+            document.setVisibility(defaultVisibility(request.visibility()));
+        }
 
         Document saved = documentRepository.save(document);
         return documentMapper.toResponse(saved, documentAuthorizationService.resolveEffectivePermission(saved, actor));
@@ -107,6 +111,13 @@ public class DocumentServiceImpl implements DocumentService {
             return null;
         }
         return query.trim();
+    }
+
+    private String normalizeContent(String content) {
+        if (content == null || content.isBlank()) {
+            return "{\"children\":[{\"type\":\"paragraph\",\"text\":\"\",\"children\":[]}]}";
+        }
+        return content;
     }
 
     private List<DocumentResponse> mapPage(List<Document> documents, User actor) {

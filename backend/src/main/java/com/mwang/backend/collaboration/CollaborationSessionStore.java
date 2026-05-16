@@ -14,4 +14,6 @@ public interface CollaborationSessionStore {
     Optional<CollaborationSessionResponse> findBySessionId(UUID documentId, UUID sessionId);
 
     List<CollaborationSessionResponse> findByDocumentId(UUID documentId);
+
+    List<CollaborationSessionResponse> removeByUserId(UUID documentId, UUID userId);
 }

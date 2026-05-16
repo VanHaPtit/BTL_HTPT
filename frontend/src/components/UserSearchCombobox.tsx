@@ -5,9 +5,10 @@ import type { UserSummary } from '../api/users'
 interface Props {
   onSelect: (user: UserSummary) => void
   placeholder?: string
+  disabled?: boolean
 }
 
-export function UserSearchCombobox({ onSelect, placeholder = 'Search users…' }: Props) {
+export function UserSearchCombobox({ onSelect, placeholder = 'Search users…', disabled = false }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<UserSummary[]>([])
   const [open, setOpen] = useState(false)
@@ -15,6 +16,11 @@ export function UserSearchCombobox({ onSelect, placeholder = 'Search users…' }
 
   useEffect(() => {
     clearTimeout(timeoutRef.current)
+    if (disabled) {
+      setResults([])
+      setOpen(false)
+      return
+    }
     if (query.length < 2) { setResults([]); return }
     timeoutRef.current = setTimeout(async () => {
       const users = await usersApi.search(query)
@@ -34,8 +40,9 @@ export function UserSearchCombobox({ onSelect, placeholder = 'Search users…' }
   return (
     <div className="relative">
       <input
-        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
         value={query}
+        disabled={disabled}
         onChange={e => setQuery(e.target.value)}
         placeholder={placeholder}
         onFocus={() => results.length > 0 && setOpen(true)}

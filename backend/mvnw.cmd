@@ -31,6 +31,22 @@
 @SET __MVNW_CMD__=
 @SET __MVNW_ERROR__=
 @SET __MVNW_PSMODULEP_SAVE=%PSModulePath%
+@SET __MVNW_NEEDS_JAVA23__=
+@IF "%JAVA_HOME%"=="" (
+  @SET __MVNW_NEEDS_JAVA23__=1
+) ELSE (
+  @echo %JAVA_HOME% | findstr /I "\\jdk-23" >NUL
+  @IF ERRORLEVEL 1 @SET __MVNW_NEEDS_JAVA23__=1
+)
+@IF NOT "%__MVNW_NEEDS_JAVA23__%"=="" (
+  @FOR /D %%D IN ("%ProgramFiles%\Java\jdk-23*") DO (
+    @SET "JAVA_HOME=%%~fD"
+    @SET "PATH=%%~fD\bin;%PATH%"
+    @GOTO __MVNW_JAVA23_READY
+  )
+)
+:__MVNW_JAVA23_READY
+@SET __MVNW_NEEDS_JAVA23__=
 @SET PSModulePath=
 @FOR /F "usebackq tokens=1* delims==" %%A IN (`powershell -noprofile "& {$scriptDir='%~dp0'; $script='%__MVNW_ARG0_NAME__%'; icm -ScriptBlock ([Scriptblock]::Create((Get-Content -Raw '%~f0'))) -NoNewScope}"`) DO @(
   IF "%%A"=="MVN_CMD" (set __MVNW_CMD__=%%B) ELSE IF "%%B"=="" (echo %%A) ELSE (echo %%A=%%B)

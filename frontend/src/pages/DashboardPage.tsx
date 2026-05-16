@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { documentsApi } from '../api/documents'
@@ -5,7 +6,7 @@ import type { Document, DocumentScope } from '../types/document'
 import { DocumentCard } from '../components/DocumentCard'
 import { CreateDocumentModal } from '../components/CreateDocumentModal'
 
-const TABS: { label: string; scope: DocumentScope; icon: JSX.Element }[] = [
+const TABS: { label: string; scope: DocumentScope; icon: React.JSX.Element }[] = [
   {
     label: 'Mine',
     scope: 'owned',
@@ -64,7 +65,7 @@ export function DashboardPage() {
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
-  const [firstLoad, setFirstLoad] = useState(true)
+  const [_firstLoad, setFirstLoad] = useState(true)
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {

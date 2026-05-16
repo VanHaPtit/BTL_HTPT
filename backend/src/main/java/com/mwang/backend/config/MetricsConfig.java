@@ -17,7 +17,7 @@ public class MetricsConfig {
     private static final Set<String> TIMED_OPERATIONS = Set.of(
             "lockAcquisition", "loadDocument", "loadInterveningOps",
             "otTransformLoop", "perOpJsonParse", "treeApply",
-            "persistOperation", "publishRedis", "publishKafka");
+            "persistOperation", "publishRedis");
 
     @Bean
     MeterRegistryCustomizer<MeterRegistry> histogramCustomizer() {

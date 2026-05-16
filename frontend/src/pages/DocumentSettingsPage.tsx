@@ -7,11 +7,13 @@ import { CollaboratorRow } from '../components/CollaboratorRow'
 import { UserSearchCombobox } from '../components/UserSearchCombobox'
 import type { UserSummary } from '../api/users'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 
 export function DocumentSettingsPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { logout } = useAuth()
+  const { addToast } = useToast()
   const [doc, setDoc] = useState<Document | null>(null)
   const [collaborators, setCollaborators] = useState<DocumentCollaborator[]>([])
   const [title, setTitle] = useState('')
@@ -19,6 +21,8 @@ export function DocumentSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [addPermission, setAddPermission] = useState<Permission>('READ')
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const fetchDoc = useCallback(async () => {
     const d = await documentsApi.get(id!)
@@ -33,8 +37,14 @@ export function DocumentSettingsPage() {
   async function handleSave() {
     setSaving(true)
     setError(null)
+    setSuccess(null)
     try {
-      await documentsApi.update(id!, { title, visibility })
+      const updated = await documentsApi.update(id!, { title, visibility })
+      setDoc(updated)
+      setTitle(updated.title)
+      setVisibility(updated.visibility)
+      setCollaborators(updated.collaborators)
+      setSuccess('Settings saved')
     } catch {
       setError('Failed to save changes')
     } finally {
@@ -44,13 +54,63 @@ export function DocumentSettingsPage() {
 
   async function handleAddCollaborator(user: UserSummary) {
     setError(null)
+    setSuccess(null)
+    if (doc?.visibility !== 'SHARED') {
+      setError('Switch the document visibility to SHARED and save before inviting collaborators.')
+      return
+    }
     try {
       await collaboratorsApi.add(id!, user.userId, addPermission)
       await fetchDoc()
+      setSuccess(`Added ${user.username}`)
     } catch (err: unknown) {
       const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code
       if (code === 'COLLABORATOR_ALREADY_EXISTS') setError(`${user.username} is already a collaborator`)
+      else if (code === 'INVALID_COLLABORATION_REQUEST') {
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        setError(msg ?? 'Collaborators can only be invited when the document is SHARED')
+      }
       else setError('Failed to add collaborator')
+    }
+  }
+
+  async function handleCollaboratorPermissionChange(userId: string, permission: Permission) {
+    setError(null)
+    setSuccess(null)
+    await collaboratorsApi.update(id!, userId, permission)
+    setCollaborators(current =>
+      current.map(collaborator =>
+        collaborator.userId === userId ? { ...collaborator, permission } : collaborator,
+      ),
+    )
+    setSuccess('Collaborator updated')
+  }
+
+  async function handleCollaboratorRemove(userId: string, username: string) {
+    setError(null)
+    setSuccess(null)
+    await collaboratorsApi.remove(id!, userId)
+    setCollaborators(current => current.filter(collaborator => collaborator.userId !== userId))
+    setDoc(current => current
+      ? { ...current, collaborators: current.collaborators.filter(collaborator => collaborator.userId !== userId) }
+      : current)
+    setSuccess(`Removed ${username}`)
+  }
+
+  async function handleDeleteDocument() {
+    if (!doc) return
+    if (!confirm(`Delete "${doc.title}"? This action cannot be undone.`)) return
+    setDeleting(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      await documentsApi.delete(doc.id)
+      addToast('Document deleted', 'success')
+      navigate('/')
+    } catch {
+      setError('Failed to delete document')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -75,6 +135,8 @@ export function DocumentSettingsPage() {
           <section>
             <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Document</h2>
             <div className="bg-white border rounded-lg p-4 space-y-4">
+              {success && <p className="text-xs text-green-600">{success}</p>}
+              {error && <p className="text-xs text-red-600">{error}</p>}
               <div>
                 <label className="block text-sm font-medium mb-1">Title</label>
                 <input className="w-full border rounded px-3 py-2 text-sm"
@@ -97,35 +159,47 @@ export function DocumentSettingsPage() {
           </section>
         )}
 
-        {(doc.currentUserPermission === 'OWNER' || doc.currentUserPermission === 'ADMIN') && (
+        {doc.currentUserPermission === 'OWNER' && doc.visibility !== 'PUBLIC' && (
           <section>
             <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Collaborators</h2>
             <div className="bg-white border rounded-lg p-4">
+              {success && <p className="text-xs text-green-600 mb-2">{success}</p>}
+              {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
               {collaborators.length === 0 ? (
                 <p className="text-sm text-gray-400 mb-4">No collaborators yet</p>
               ) : (
                 <div className="mb-4">
                   {collaborators.map(c => (
-                    <CollaboratorRow key={c.userId} documentId={id!}
-                      collaborator={c} onUpdated={fetchDoc} />
+                    <CollaboratorRow
+                      key={c.userId}
+                      collaborator={c}
+                      onPermissionChange={handleCollaboratorPermissionChange}
+                      onRemove={handleCollaboratorRemove}
+                    />
                   ))}
                 </div>
               )}
 
               <div className="pt-2 border-t">
                 <p className="text-sm font-medium mb-2">Add collaborator</p>
-                {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+                {doc.visibility !== 'SHARED' && (
+                  <p className="text-xs text-amber-600 mb-2">
+                    Set visibility to <span className="font-semibold">SHARED</span> and save before inviting collaborators.
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <UserSearchCombobox onSelect={handleAddCollaborator}
+                    <UserSearchCombobox
+                      onSelect={handleAddCollaborator}
+                      disabled={doc.visibility !== 'SHARED'}
                       placeholder="Search by username or email..." />
                   </div>
                   <select className="border rounded px-2 py-2 text-sm"
                     value={addPermission}
+                    disabled={doc.visibility !== 'SHARED'}
                     onChange={e => setAddPermission(e.target.value as Permission)}>
                     <option value="READ">READ</option>
                     <option value="WRITE">WRITE</option>
-                    <option value="ADMIN">ADMIN</option>
                   </select>
                 </div>
               </div>
@@ -133,7 +207,36 @@ export function DocumentSettingsPage() {
           </section>
         )}
 
-        {doc.currentUserPermission !== 'OWNER' && doc.currentUserPermission !== 'ADMIN' && (
+        {doc.currentUserPermission === 'OWNER' && doc.visibility === 'PUBLIC' && (
+          <section>
+            <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Collaborators</h2>
+            <div className="bg-white border rounded-lg p-4">
+              <p className="text-sm text-gray-500">
+                Public documents do not use collaborator invites because any user can access them.
+              </p>
+            </div>
+          </section>
+        )}
+
+        {doc.currentUserPermission === 'OWNER' && (
+          <section>
+            <h2 className="text-sm font-semibold uppercase text-red-500 mb-3">Danger Zone</h2>
+            <div className="bg-white border border-red-200 rounded-lg p-4 space-y-3">
+              <p className="text-sm text-gray-600">
+                Delete this document permanently. This action cannot be undone.
+              </p>
+              <button
+                onClick={handleDeleteDocument}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete document'}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {doc.currentUserPermission !== 'OWNER' && (
           <p className="text-sm text-gray-500">You do not have permission to manage this document.</p>
         )}
       </main>

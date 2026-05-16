@@ -8,6 +8,7 @@ import type {
   SessionSnapshot,
   SubmitOperationRequest,
 } from '../types/collaboration'
+import type { PresenceType } from '../types/collaboration'
 
 interface Options {
   documentId: string
@@ -32,11 +33,38 @@ export function useCollaboration({
 }: Options) {
   const clientRef = useRef<Client | null>(null)
   const [connected, setConnected] = useState(false)
+  const offlineQueueKey = `collab.offlineQueue.${documentId}.${sessionId}`
+
+  const loadOfflineQueue = useCallback((): SubmitOperationRequest[] => {
+    try {
+      const raw = window.localStorage.getItem(offlineQueueKey)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }, [offlineQueueKey])
+
+  const saveOfflineQueue = useCallback((queue: SubmitOperationRequest[]) => {
+    if (queue.length === 0) {
+      window.localStorage.removeItem(offlineQueueKey)
+      return
+    }
+    window.localStorage.setItem(offlineQueueKey, JSON.stringify(queue))
+  }, [offlineQueueKey])
+
+  const enqueueOfflineOperation = useCallback((req: SubmitOperationRequest) => {
+    const queue = loadOfflineQueue()
+    queue.push(req)
+    saveOfflineQueue(queue)
+  }, [loadOfflineQueue, saveOfflineQueue])
 
   const submitOperation = useCallback(
     (req: SubmitOperationRequest) => {
       if (!clientRef.current?.connected) {
-        console.warn('[collab] Cannot submit operation: Not connected')
+        console.warn('[collab] Queued operation for replay after reconnect')
+        enqueueOfflineOperation(req)
         return
       }
       console.log(`[collab] >>> Submitting ${req.operationType} v${req.baseVersion}`)
@@ -45,14 +73,15 @@ export function useCollaboration({
         body: JSON.stringify(req),
       })
     },
-    [documentId],
+    [documentId, enqueueOfflineOperation],
   )
 
-  const updatePresence = useCallback(
-    (data: unknown) => {
+  const publishPresence = useCallback(
+    (type: PresenceType, data: unknown) => {
+      if (!clientRef.current?.connected) return
       clientRef.current?.publish({
         destination: `/app/documents/${documentId}/presence.update`,
-        body: JSON.stringify({ sessionId, type: 'CURSOR', payload: data }),
+        body: JSON.stringify({ sessionId, type, payload: data }),
       })
     },
     [documentId, sessionId],
@@ -128,6 +157,18 @@ export function useCollaboration({
           destination: `/app/documents/${documentId}/sessions.join`,
           body: JSON.stringify({ sessionId }),
         })
+
+        const offlineQueue = loadOfflineQueue()
+        if (offlineQueue.length > 0) {
+          console.log(`[collab] Replaying ${offlineQueue.length} queued offline operations`)
+          for (const queued of offlineQueue) {
+            client.publish({
+              destination: `/app/documents/${documentId}/operations.submit`,
+              body: JSON.stringify(queued),
+            })
+          }
+          saveOfflineQueue([])
+        }
       },
       onDisconnect: () => {
         console.log('[collab] Disconnected')
@@ -159,9 +200,14 @@ export function useCollaboration({
       setConnected(false)
       clientRef.current = null
     }
-  }, [documentId, token])
+  }, [documentId, token, loadOfflineQueue, saveOfflineQueue])
 
-  return { connected, submitOperation, updatePresence }
+  const updatePresence = useCallback(
+    (data: unknown) => publishPresence('CURSOR_POSITION', data),
+    [publishPresence],
+  )
+
+  return { connected, submitOperation, updatePresence, publishPresence }
 }
 
 function parseUserIdFromToken(token: string): string | null {

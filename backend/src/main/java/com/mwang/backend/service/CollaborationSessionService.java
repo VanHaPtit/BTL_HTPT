@@ -10,7 +10,11 @@ import java.util.UUID;
 public interface CollaborationSessionService {
     CollaborationSessionSnapshot join(UUID documentId);
 
+    CollaborationSessionSnapshot join(UUID documentId, UUID requestedSessionId);
+
     CollaborationSessionSnapshot join(UUID documentId, SimpMessageHeaderAccessor headerAccessor);
+
+    CollaborationSessionSnapshot join(UUID documentId, UUID requestedSessionId, SimpMessageHeaderAccessor headerAccessor);
 
     CollaborationSessionSnapshot leave(UUID documentId, UUID sessionId);
 
