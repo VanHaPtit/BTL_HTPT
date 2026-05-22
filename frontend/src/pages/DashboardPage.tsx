@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext'
 import { documentsApi } from '../api/documents'
 import type { Document, DocumentScope } from '../types/document'
@@ -7,7 +7,7 @@ import { CreateDocumentModal } from '../components/CreateDocumentModal'
 
 // --- CONSTANTS & COMPONENTS ---
 
-const TABS: { label: string; scope: DocumentScope; icon: JSX.Element }[] = [
+const TABS: { label: string; scope: DocumentScope; icon: React.JSX.Element }[] = [
   {
     label: 'Của tôi',
     scope: 'owned',
@@ -89,6 +89,7 @@ export function DashboardPage() {
   function handleTabChange(scope: DocumentScope) {
     setActiveScope(scope)
     setPage(0)
+    setDocs([])
   }
 
   return (

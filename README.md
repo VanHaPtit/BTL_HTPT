@@ -1,306 +1,391 @@
-# Collaborative Document Engine
+# BTL_HTPT - Hệ thống soạn thảo văn bản cộng tác thời gian thực
 
-## Project Overview
+BTL_HTPT là project xây dựng một hệ thống soạn thảo văn bản cộng tác, trong đó nhiều người dùng có thể cùng mở, cùng chỉnh sửa và theo dõi thay đổi của nhau gần thời gian thực trên cùng một tài liệu.
 
-A real-time collaborative document editing backend that solves the multi-user concurrent editing problem through server-authoritative operational transformation. Multiple clients can edit the same document simultaneously; the server serializes all operations, resolves conflicts, and fans out accepted operations to all connected instances.
+Project được xây dựng theo hướng client-server, kết hợp giao tiếp HTTP API cho các chức năng nghiệp vụ và WebSocket/STOMP cho luồng collaboration realtime. Backend đóng vai trò điều phối thao tác, quản lý quyền truy cập, lưu trạng thái bền vững của tài liệu và đồng bộ thay đổi tới các client khác.
 
-This project is a portfolio and interview reference implementation demonstrating a horizontally scalable backend built with Spring Boot, PostgreSQL, Redis, Kafka, and STOMP/WebSocket collaboration.
+## 1. Mục tiêu của project
 
-## Business Context
+Mục tiêu của hệ thống:
 
-### Purpose
+- cho phép người dùng tạo, mở và quản lý tài liệu văn bản
+- hỗ trợ nhiều người cùng chỉnh sửa một tài liệu theo thời gian thực
+- đảm bảo đồng bộ và tính nhất quán của tài liệu khi có nhiều thao tác đồng thời
+- hiển thị những người đang tham gia phiên chỉnh sửa
+- lưu trữ tài liệu và lịch sử thao tác trên server
+- thể hiện rõ các yếu tố của hệ thống phân tán trong quá trình đồng bộ dữ liệu
 
-Enable multiple users to read, edit, and share structured documents in real time while the server remains the ordering authority for accepted changes.
+## 2. Chức năng chính
 
-### Target Users
+### 2.1. Quản lý tài liệu
 
-- Owners creating and managing documents
-- Collaborators with role-based access
-- Engineers and interviewers evaluating real-time collaboration architecture
+- Đăng ký, đăng nhập bằng tài khoản người dùng
+- Tạo tài liệu mới
+- Xem danh sách tài liệu
+- Mở và đọc nội dung tài liệu
+- Chỉnh sửa tiêu đề, nội dung, visibility
+- Xóa tài liệu
 
-### Core Value
+### 2.2. Cộng tác thời gian thực
 
-- Durable document state and audit-friendly operation history
-- Low-latency collaboration across backend instances
-- Clear separation between hot-path fanout and durable event streaming
-- An architecture that is practical to explain, defend, and evolve
+- Nhiều người dùng có thể mở cùng một tài liệu
+- Thao tác chỉnh sửa được gửi lên server qua WebSocket/STOMP
+- Server chấp nhận thao tác, cấp `serverVersion`, lưu vào operation log
+- Các client khác nhận thay đổi gần thời gian thực
 
-## Architecture Overview
+### 2.3. Quản lý phiên chỉnh sửa
 
-| Component | Role |
-|---|---|
-| PostgreSQL | Source of truth for documents, collaborators, operation history, and current document projection |
-| Flyway | Schema lifecycle owner |
-| JPA | Relational mapping and persistence validation |
-| Redis Pub/Sub | Low-latency accepted-operation fanout and presence/session propagation between instances |
-| Kafka | Durable accepted-operation stream for replay, audit, analytics, and async consumers |
-| STOMP/WebSocket | Client collaboration transport |
-| Spring Security | Authentication and request gating, with a pragmatic MVP identity flow and JWT-capable path |
+- Hiển thị danh sách người đang tham gia tài liệu
+- Theo dõi session đang kết nối
+- Hiển thị con trỏ của các client khác trong editor
 
-### Architecture Summary
+### 2.4. Phân quyền tài liệu
 
-- PostgreSQL owns durable state.
-- Redis owns speed-sensitive fanout and collaboration coordination.
-- Kafka owns durable downstream event streaming.
-- The backend is the ordering authority for accepted operations.
-- Clients never decide the canonical server version.
+Project hiện có các mức quyền:
 
-## Data Flow Diagram
+- `OWNER`
+- `WRITE`
+- `READ`
 
-```mermaid
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryTextColor': '#ffffff',
-    'lineColor': '#5b6875',
-    'edgeLabelBackground': '#ffffff'
-  },
-  'themeCSS': '.edgeLabel rect { fill: #ffffff !important; opacity: 1 !important; } .edgeLabel span, .edgeLabel p, .edgeLabel foreignObject { color: #111111 !important; }'
-}}%%
-flowchart LR
-    C["<b>Clients</b><br/>React UI + SockJS/STOMP<br/>REST + WebSocket"]
-    R["<b>REST Layer</b><br/>Auth, CRUD, sharing, search<br/>Document controllers"]
-    W["<b>Collaboration Layer</b><br/>Join, presence, submit op<br/>ACL + session checks"]
-    S["<b>Spring Services</b><br/>DocumentService<br/>CollaborationSessionService<br/>CollaborationPresenceService<br/>DocumentOperationService<br/>Authorization, idempotency, transform and fanout<br/>Lock document, assign next version, persist projection + op log"]
-    P["<b>PostgreSQL</b><br/>Documents<br/>Collaborators + ops"]
-    Redis["<b>Redis</b><br/>Low-latency fanout<br/>Sessions + presence"]
-    K["<b>Kafka</b><br/>Accepted ops stream<br/>Replay + audit"]
-    O["<b>Outputs</b><br/>Topic broadcasts to connected collaborators<br/>Async consumers"]
+Người dùng có thể chia sẻ tài liệu và quản lý collaborator theo quyền truy cập.
 
-    C -->|CRUD and fetch| R
-    C -->|join, presence, submit op| W
-    R -->|server-authoritative ordering| S
-    W -->|validate ACL and session state| S
-    S -->|persist projection and op log| P
-    S -->|hot-path fanout| Redis
-    S -->|after-commit durable stream| K
-    S -->|broadcast accepted operation| O
-    Redis -.->|fanout to other backend instances| O
+### 2.5. Lưu trữ và theo dõi lịch sử
 
-    classDef data fill:#4299e1,stroke:#2b6cb0,color:#ffffff;
-    classDef process fill:#ed8936,stroke:#c05621,color:#ffffff;
-    classDef service fill:#9f7aea,stroke:#6b46c1,color:#ffffff;
-    classDef durable fill:#48bb78,stroke:#2f855a,color:#ffffff;
+- Tài liệu được lưu bền vững trong MySQL
+- Mỗi accepted operation được lưu vào `document_operations`
+- Hệ thống có versioning và operation history
+- Có checkpoint định kỳ để hỗ trợ catch-up và khôi phục trạng thái
 
-    class C,Redis data;
-    class R,W process;
-    class S service;
-    class P,K,O durable;
+## 3. Đối chiếu với yêu cầu đề bài
+
+### 3.1. Yêu cầu chức năng bắt buộc
+
+- Tạo và quản lý tài liệu: Đã có
+- Chỉnh sửa cộng tác theo thời gian thực: Đã có
+- Đồng bộ thay đổi: Đã có
+- Quản lý người dùng đang chỉnh sửa: Đã có
+- Hiển thị vị trí con trỏ: Đã có
+- Lưu trữ tài liệu trên server: Đã có
+
+### 3.2. Yêu cầu kỹ thuật bắt buộc
+
+- Giao tiếp mạng giữa client và server: Đã có, gồm HTTP API và WebSocket/STOMP
+- Xử lý nhiều client đồng thời: Đã có
+- Cơ chế đồng bộ thay đổi giữa các client: Đã có
+- Xử lý xung đột chỉnh sửa đồng thời: Đã có
+
+### 3.3. Chức năng nâng cao hiện có
+
+- Lịch sử chỉnh sửa và versioning: Đã có
+- Hiển thị con trỏ của người dùng khác: Đã có
+- Offline editing và đồng bộ lại khi reconnect: Đã có ở mức cơ bản
+- Phân quyền người dùng: Đã có
+- Undo/redo trong môi trường cộng tác: Chưa có
+- Hiển thị vùng chọn của người dùng khác: Chưa có
+
+## 4. Quy trình hoạt động
+
+### 4.1. Quy trình đăng nhập và sử dụng
+
+1. Người dùng đăng ký hoặc đăng nhập.
+2. Frontend nhận JWT từ backend.
+3. Người dùng vào dashboard, xem danh sách tài liệu.
+4. Người dùng mở một tài liệu để bắt đầu phiên chỉnh sửa.
+
+### 4.2. Quy trình mở tài liệu để cộng tác
+
+1. Frontend gọi `GET /api/documents/{id}` để lấy nội dung hiện tại.
+2. Frontend mở kết nối WebSocket tới backend.
+3. Client gửi message join session.
+4. Backend xác thực người dùng, kiểm tra quyền đọc, sau đó lưu session.
+5. Backend broadcast session snapshot để các client khác cập nhật danh sách thành viên.
+
+### 4.3. Quy trình chỉnh sửa realtime
+
+1. Người dùng thao tác trong editor.
+2. Frontend chuyển thao tác editor thành `SubmitOperationRequest`.
+3. Request được gửi qua STOMP đến backend.
+4. Backend:
+   - xác thực người dùng
+   - kiểm tra quyền `WRITE`
+   - kiểm tra duplicate bằng `operationId`
+   - khóa bản ghi tài liệu để xử lý đồng thời
+   - transform thao tác mới dựa trên các thao tác đã accepted
+   - cập nhật nội dung tài liệu và tăng `serverVersion`
+   - lưu accepted operation vào operation log
+5. Sau khi transaction commit:
+   - backend broadcast accepted operation đến client cùng node
+   - event được đưa vào outbox
+   - outbox publisher đẩy sự kiện qua Redis để các backend instance khác tiếp tục broadcast
+
+### 4.4. Quy trình reconnect
+
+1. Khi client mất kết nối, frontend giữ trạng thái và có thể xếp thao tác vào offline queue.
+2. Khi kết nối lại, client gửi thông tin `X-Last-Server-Version-*`.
+3. Backend thực hiện catch-up các thao tác còn thiếu.
+4. Frontend replay các thao tác offline đã queue.
+
+## 5. Kiến trúc hệ thống
+
+### 5.1. Tổng quan kiến trúc
+
+Hệ thống gồm 4 thành phần chính:
+
+- Frontend: giao diện người dùng và editor
+- Backend: xử lý nghiệp vụ, bảo mật, collaboration, persistence
+- MySQL: lưu dữ liệu bền vững
+- Redis: đồng bộ sự kiện collaboration giữa các backend instance
+
+Mô hình tổng quát:
+
+```text
+Client (React + Tiptap)
+        |
+        | HTTP / WebSocket(STOMP)
+        v
+Backend (Spring Boot)
+        |
+        +--> MySQL
+        |
+        +--> Redis Pub/Sub
 ```
 
-The collaboration hot path stays server-controlled: a client submits an operation with `operationId` and `baseVersion`, the backend validates access, transforms as needed, persists the accepted result, then publishes to Redis for low-latency fanout and Kafka for durability.
+### 5.2. Frontend
 
-## Processing Pipeline
+Frontend được xây dựng bằng:
 
-1. **Ingress**  
-   REST calls handle document CRUD and sharing. STOMP endpoints handle join, leave, presence, and edit submission.
+- React
+- TypeScript
+- Vite
+- Tiptap editor
 
-2. **Identity and ACL**  
-   Spring Security authenticates HTTP and WebSocket traffic, then document-specific authorization checks gate read or write access.
+Frontend đảm nhiệm:
 
-3. **Validation**  
-   Operation shape, session state, and collaborator semantics are validated before the write path proceeds.
+- đăng nhập, đăng ký
+- dashboard tài liệu
+- trang editor
+- mở WebSocket
+- gửi thao tác collaboration
+- hiển thị danh sách session, operation history, remote cursor
 
-4. **Ordering and Rebase**  
-   The backend locks the document row, checks idempotency, loads intervening operations, and rebases or converts to `NO_OP` when needed.
+### 5.3. Backend
 
-5. **Persistence**  
-   The materialized document snapshot and immutable operation record are saved in PostgreSQL under one transactional flow.
+Backend được xây dựng bằng:
 
-6. **Distribution**  
-   Local subscribers receive immediate topic broadcasts, Redis propagates to other instances, and Kafka receives an after-commit accepted-operation event.
+- Spring Boot 3.5
+- Spring Web
+- Spring Security
+- Spring WebSocket
+- Spring Data JPA
+- Flyway
+- Redis
 
-## System Architecture
+Backend đảm nhiệm:
 
-```mermaid
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryTextColor': '#ffffff',
-    'lineColor': '#5b6875',
-    'edgeLabelBackground': '#ffffff'
-  },
-  'themeCSS': '.edgeLabel rect { fill: #ffffff !important; opacity: 1 !important; } .edgeLabel span, .edgeLabel p, .edgeLabel foreignObject { color: #111111 !important; }'
-}}%%
-flowchart TB
-    Client["<b>Client Layer</b><br/>React + Vite frontend<br/>REST API calls<br/>SockJS/STOMP collaboration transport"]
-    API["<b>API and Messaging Layer</b><br/>DocumentController<br/>CollaboratorController<br/>AuthController<br/>CollaborationController<br/>WebSocketConfig"]
-    App["<b>Application Service Layer</b><br/>DocumentService<br/>DocumentOperationService<br/>CollaborationSessionService<br/>PresenceService<br/>AuthorizationService<br/>OperationTransformer<br/>CurrentUserProvider<br/>SimpMessagingTemplate fanout"]
-    Data["<b>Data Layer</b><br/>PostgreSQL + Flyway + JPA<br/>Document aggregate, collaborators, immutable operation history"]
-    Platform["<b>Platform and Coordination Layer</b><br/>Redis Pub/Sub for low-latency fanout<br/>Kafka for durable stream and replay<br/>Docker Compose local runtime<br/>Actuator health and Prometheus exposure"]
+- xác thực JWT
+- CRUD tài liệu
+- quản lý collaborator
+- xử lý accepted operation
+- đồng bộ session/presence
+- fanout sự kiện collaboration
+- metrics và health monitoring
 
-    Client -->|REST and WebSocket ingress| API
-    API -->|invoke services and authorization| App
-    App -->|durable state| Data
-    App -->|fanout, streaming, runtime coordination| Platform
+### 5.4. Cơ sở dữ liệu
 
-    classDef data fill:#4299e1,stroke:#2b6cb0,color:#ffffff;
-    classDef process fill:#ed8936,stroke:#c05621,color:#ffffff;
-    classDef service fill:#9f7aea,stroke:#6b46c1,color:#ffffff;
-    classDef durable fill:#48bb78,stroke:#2f855a,color:#ffffff;
+MySQL được dùng để lưu:
 
-    class Client data;
-    class API process;
-    class App service;
-    class Data,Platform durable;
+- thông tin người dùng
+- tài liệu
+- collaborator và quyền trực cập
+- lịch sử thao tác
+- outbox event
+- checkpoint tài liệu
+
+Redis được dùng để:
+
+- fanout accepted operation giữa các instance backend
+- broadcast session snapshot
+- broadcast presence update
+- broadcast access revoked event
+- lưu session collaboration đang hoạt động
+
+## 6. Mô hình đồng bộ dữ liệu
+
+Project hiện áp dụng mô hình `server-authoritative`.
+
+Điều này có nghĩa:
+
+- client không tự quyết định phiên bản đúng cuối cùng
+- mọi thao tác phải đi qua backend
+- backend sắp xếp, transform và chấp nhận thao tác
+- backend mới là nơi sinh ra `serverVersion`
+
+Hệ thống hiện đang dùng các cơ chế sau:
+
+- Pessimistic locking để tuần tự hóa ghi nhận thao tác
+- Idempotency theo operationId
+- Operational transform / rebase
+- currentVersion trên tài liệu
+- serverVersion trên từng operation
+- Lamport time và vector clock ở mức metadata
+- outbox để đảm bảo publish accepted operation sau commit
+
+## 7. Giao thức trao đổi dữ liệu
+
+### 7.1. HTTP API
+
+Dùng cho:
+
+- đăng ký, đăng nhập
+- CRUD tài liệu
+- quản lý collaborator
+- lấy operation history
+- lấy checkpoint mới nhất
+
+Một số endpoint chính:
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/documents`
+- `POST /api/documents`
+- `GET /api/documents/{id}`
+- `PUT /api/documents/{id}`
+- `DELETE /api/documents/{id}`
+- `GET /api/documents/{id}/operations`
+- `GET /api/documents/{id}/checkpoints/latest`
+
+### 7.2. WebSocket/STOMP
+
+Dùng cho collaboration realtime.
+
+Client gửi lên:
+
+- `/app/documents/{documentId}/sessions.join`
+- `/app/documents/{documentId}/sessions.leave`
+- `/app/documents/{documentId}/presence.update`
+- `/app/documents/{documentId}/operations.submit`
+
+Client subscribe:
+
+- `/topic/documents/{documentId}/sessions`
+- `/topic/documents/{documentId}/presence`
+- `/topic/documents/{documentId}/operations`
+- `/topic/documents/{documentId}/access/{userId}`
+- `/user/queue/catchup.{documentId}`
+
+## 8. Cơ chế xử lý xung đột chỉnh sửa đồng thời
+
+Để đảm bảo tính nhất quán khi nhiều người cùng sửa:
+
+- mọi thao tác đều có `baseVersion`
+- backend tải các thao tác đã accepted sau `baseVersion`
+- thao tác mới được transform lần lượt theo thứ tự accepted
+- nếu thao tác trở thành vô nghĩa sau transform thì có thể thành `NO_OP`
+- kết quả cuối cùng được lưu vào tài liệu và operation log
+
+Đây là phần cốt lõi giúp project đáp ứng yêu cầu "đồng bộ thay đổi" và "xử lý xung đột chỉnh sửa đồng thời".
+
+## 9. Kiểm thử và trạng thái hiện tại
+
+Trạng thái đã kiểm tra:
+
+- frontend build thành công
+- backend test suite đã chạy pass ở mức unit/slice test
+- hệ thống có thể chạy qua Docker Compose
+- login, mở tài liệu, collaboration, session và remote cursor đã được rà soát trong quá trình hoàn thiện
+
+Giới hạn hiện tại:
+
+- undo/redo cộng tác chưa có
+- vùng chọn remote chưa có đầy đủ
+- offline editing mới ở mức cơ bản
+- một số test integration dùng Testcontainers phụ thuộc môi trường Docker
+
+## 10. Hướng dẫn chạy nhanh
+
+### 10.1. Chạy bằng Docker Compose
+
+Tại thư mục `BTL_HTPT`:
+
+```powershell
+docker compose up -d --build
 ```
 
-### Layer Responsibilities
+Địa chỉ mặc định:
 
-- **Client and editor**: React, Vite, Tiptap, SockJS, and STOMP combine metadata management with live editing.
-- **Backend responsibility**: Spring Boot owns request handling, authorization, operation ordering, document projection updates, and downstream publication.
-- **State boundaries**: PostgreSQL is the source of truth, Redis carries transient coordination and fanout, and Kafka holds durable accepted-operation events.
-- **Scalability posture**: Any backend instance can accept a client connection, while Redis and Kafka let collaboration and event processing extend beyond one node.
+- Frontend: `http://localhost:13000`
+- Backend: `http://localhost:18080`
+- Health check: `http://localhost:18080/actuator/health`
+- MySQL: `localhost:33306`
+- Redis: `localhost:16379`
 
-## Features
+### 10.2. Tài khoản demo
 
-### Functional
+Project profile `dev` có seed dữ liệu demo. Một tài khoản mẫu:
 
-- Document CRUD and paginated listing for accessible resources
-- Ownership transfer and collaborator permission management
-- Real-time join, leave, presence, and accepted-operation messaging
-- Operation log plus materialized current document state
-- Search and filtering support for document discovery
+- username: `alice`
+- password: `demo1234`
 
-### Non-Functional
+### 10.3. Chạy riêng từng thành phần
 
-- Idempotency checks on `operationId` avoid duplicate accepted operations
-- Pessimistic locking serializes version assignment on the document aggregate
-- Kafka publication occurs after commit to avoid durable events for rolled-back writes
-- Redis propagation filters same-instance echoes to prevent duplicate broadcasts
-- Flyway-controlled schema evolution with `ddl-auto=validate`
-- Actuator health and Prometheus endpoints for runtime visibility
-- Automated test coverage across controllers, services, Redis, Kafka, and end-to-end collaboration paths
+Frontend:
 
-## Multi-Instance Collaboration Flow
-
-1. Client connects to any backend instance and joins a document channel.
-2. Client submits an operation with `operationId`, `baseVersion`, and typed payload.
-3. The instance validates ACL and operation shape.
-4. The backend acquires a pessimistic lock on the document row.
-5. It checks idempotency and transforms against intervening operations if needed.
-6. The accepted operation and updated document projection are persisted transactionally.
-7. The accepted operation is published to Redis and fanned out to clients connected to other backend instances.
-8. The accepted operation is published to Kafka for replay, audit, analytics, and async consumers.
-
-## Performance & Scalability
-
-This system was benchmarked using k6 to evaluate both baseline workloads and high-contention real-time collaboration scenarios.
-
-### Key Results
-
-| Metric            | Baseline (Independent Docs) | Contention (Same Doc) |
-|------------------|----------------------------|------------------------|
-| p95 Latency      | 11 ms                      | 3.05 s                 |
-| Median Latency   | ~6 ms                      | 484 ms                 |
-| Throughput       | 261 ops/sec                | 44 ops/sec             |
-| Error Rate       | 0%                         | 0%                     |
-
-| Aspect                                  | Observed Limit                     |
-|-----------------------------------------|------------------------------------|
-| Max throughput (independent docs)       | ~44 ops/sec                        |
-| Comfortable concurrency (p50 < 500ms)   | ~30–40 users                       |
-| Latency > 1s (p50)                      | ~50–60 users                       |
-| Hard failure point                      | Not reached (0% errors at 100 VUs) |
-
-### Native Infrastructure Estimate
-
-These benchmarks were recorded in a local Docker-based environment. On tuned native infrastructure with faster disk, lower virtualization overhead, and cleaner inter-service networking, the same shared-document contention workload would likely perform better.
-
-This is an estimate, not a measured benchmark:
-
-| Metric                  | Observed in Local Docker | Estimated on Tuned Native Infra |
-|-------------------------|--------------------------|---------------------------------|
-| Shared-doc throughput   | 44 ops/sec               | ~60-90 ops/sec                  |
-| Shared-doc p95 latency  | 3.05 s                   | ~1.5-2.4 s                      |
-| Shared-doc error rate   | 0%                       | expected to remain 0%           |
-
-### Summary
-
-- The system achieves **high throughput and low latency** under non-contended workloads.
-- Under heavy collaboration (100 users editing the same document), performance degrades due to **intentional serialization for consistency**.
-- The system demonstrates **graceful degradation** — no errors, only increased latency.
-
-👉 See full benchmark analysis: **[Performance & Scalability Report](./PERFORMANCE.md)**
-
-## API Surface
-
-### REST Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/documents` | Create a new document |
-| `GET` | `/api/documents` | List documents accessible to the authenticated user |
-| `GET` | `/api/documents/{id}` | Get a document by ID |
-| `PUT` | `/api/documents/{id}` | Update document metadata |
-| `DELETE` | `/api/documents/{id}` | Delete a document |
-| `GET` | `/api/documents/{documentId}/collaborators` | List collaborators |
-| `POST` | `/api/documents/{documentId}/collaborators` | Add a collaborator |
-| `PUT` | `/api/documents/{documentId}/collaborators/{userId}` | Update collaborator role |
-| `DELETE` | `/api/documents/{documentId}/collaborators/{userId}` | Remove a collaborator |
-| `PUT` | `/api/documents/{documentId}/collaborators/owner` | Transfer document ownership |
-
-All requests require an `X-User-Id` header containing a valid user UUID in the current MVP flow.
-
-### STOMP Destinations
-
-**Send (client to server)**
-
-| Destination | Description |
-|---|---|
-| `/app/documents/{documentId}/sessions.join` | Join a document collaboration session |
-| `/app/documents/{documentId}/sessions.leave` | Leave a document collaboration session |
-| `/app/documents/{documentId}/presence.update` | Broadcast cursor or presence update |
-| `/app/documents/{documentId}/operations.submit` | Submit an edit operation |
-
-**Subscribe (server to client)**
-
-| Topic | Description |
-|---|---|
-| `/topic/documents/{documentId}/sessions` | Session snapshot on join or leave |
-| `/topic/documents/{documentId}/presence` | Presence events and cursor updates |
-| `/topic/documents/{documentId}/operations` | Accepted operation broadcasts |
-
-## Deployment
-
-### Local Development
-
-1. **Prerequisites:** Java 17 and Docker
-2. Start infrastructure:
-   ```bash
-   docker compose up -d
-   ```
-3. Start the application:
-   ```bash
-   cd backend
-   ./mvnw spring-boot:run
-   ```
-4. Verify:
-   ```bash
-   curl http://localhost:8080/actuator/health
-   ```
-
-### Runtime Footprint
-
-- `compose.yaml` runs `postgres`, `redis`, `kafka`, `backend`, and `frontend`
-- The backend is packaged with a two-stage Dockerfile using Maven and Eclipse Temurin JRE 17
-- Environment variables inject PostgreSQL, Redis, Kafka, and JWT settings
-- Flyway runs at startup and validates the schema
-
-### Scale-Out Direction
-
-- Multiple backend instances can serve clients because fanout is not tied to one node
-- Redis keeps collaboration fast
-- Kafka keeps downstream processing durable
-- The architecture is ready for stricter JWT-first authentication and more advanced async consumers
-
-Current identity handling mixes an `X-User-Id` oriented development flow with JWT-capable security components. In the architecture story, this is best described as a pragmatic MVP authentication layer with a clearer JWT-first production path.
-
-## Running Tests
-
-```bash
-cd backend
-./mvnw test
+```powershell
+npm install
+npm run dev
 ```
 
-Note: `RedisAcceptedOperationFanoutTest` is skipped without Docker via `@Testcontainers(disabledWithoutDocker = true)`.
+Backend:
+
+```powershell
+./mvnw.cmd spring-boot:run
+```
+
+Lưu ý:
+
+- backend cần MySQL và Redis
+- backend hiện cấu hình Java 23
+
+## 11. Công nghệ sử dụng
+
+Frontend:
+
+- React
+- TypeScript
+- Vite
+- Tiptap
+- Axios
+- STOMP client
+
+Backend:
+
+- Spring Boot 3.5
+- Spring Web
+- Spring Security
+- Spring WebSocket
+- Spring Data JPA
+- Flyway
+- MySQL
+- Redis
+- Micrometer / Actuator
+
+DevOps và test:
+
+- Docker Compose
+- Maven
+- JUnit
+- Testcontainers
+
+## 12. Kết luận
+
+BTL_HTPT là một hệ thống soạn thảo văn bản cộng tác thời gian thực đã triển khai được các thành phần quan trọng của một ứng dụng phân tán:
+
+- giao tiếp HTTP và WebSocket giữa client-server
+- xử lý nhiều client đồng thời
+- đồng bộ thay đổi gần thời gian thực
+- xử lý xung đột chỉnh sửa đồng thời
+- lưu trữ tài liệu và operation history trên server
+- quản lý session, presence và remote cursor
+- phân quyền người dùng theo tài liệu
+
+Project đáp ứng được các yêu cầu chính của đề bài, đồng thời đã có thêm một số chức năng nâng cao như versioning, remote cursor, offline replay cơ bản và chia sẻ tài liệu theo quyền truy cập.

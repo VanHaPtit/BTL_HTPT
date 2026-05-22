@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
-import type { Editor } from '@tiptap/react'
+import type { Editor, JSONContent } from '@tiptap/react'
 import { v4 as uuidv4 } from 'uuid'
 import type { AcceptedOperationResponse, OperationType, SubmitOperationRequest } from '../types/collaboration'
 // Side-effect imports so TypeScript picks up ChainedCommands augmentations
@@ -8,6 +8,7 @@ import '@tiptap/extension-bold'
 import '@tiptap/extension-italic'
 import '@tiptap/extension-heading'
 import '@tiptap/extension-paragraph'
+import { parseBackendContent } from '../utils/documentContent'
 
 interface PendingEntry {
   req: SubmitOperationRequest
@@ -36,6 +37,45 @@ export function useTiptapCollaboration({
   const gapBuffer = useRef<Map<number, AcceptedOperationResponse>>(new Map())
   const fetchingGap = useRef(false)
   const selfRef = useRef<(op: AcceptedOperationResponse) => void>(() => {})
+  const lamportClock = useRef(0)
+  const vectorClock = useRef<Record<string, number>>({})
+  const syncInFlight = useRef<Promise<void> | null>(null)
+  const queuedSync = useRef(false)
+
+  const syncEditorFromServer = useCallback(async () => {
+    if (!editor || !documentId) return
+    if (syncInFlight.current) {
+      queuedSync.current = true
+      await syncInFlight.current
+      return
+    }
+
+    syncInFlight.current = (async () => {
+      const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+      const response = await fetch(`/api/documents/${documentId}`, { headers })
+      if (!response.ok) {
+        throw new Error(`Failed to sync latest document state: ${response.status}`)
+      }
+      const document = await response.json()
+      isApplyingRemote.current = true
+      try {
+        editor.commands.setContent(parseBackendContent(document.content) as JSONContent)
+        currentVersion.current = document.currentVersion ?? currentVersion.current
+      } finally {
+        isApplyingRemote.current = false
+      }
+    })()
+
+    try {
+      await syncInFlight.current
+    } finally {
+      syncInFlight.current = null
+      if (queuedSync.current) {
+        queuedSync.current = false
+        void syncEditorFromServer()
+      }
+    }
+  }, [currentVersion, documentId, editor, token])
 
   const onTransaction = useCallback(
     (transaction: any) => {
@@ -49,10 +89,13 @@ export function useTiptapCollaboration({
         const classified = classifyStep(stepJson, beforeDoc)
 
         if (classified) {
+          lamportClock.current += 1
           const req: SubmitOperationRequest = {
             operationId: uuidv4(),
             clientSessionId: sessionId,
             baseVersion: currentVersion.current,
+            clientLamportTime: lamportClock.current,
+            vectorClock: { ...vectorClock.current },
             ...classified,
           }
           pendingOps.current.set(req.operationId, { req, steps: [{ step, beforeDoc }] })
@@ -98,6 +141,8 @@ export function useTiptapCollaboration({
       }
 
       currentVersion.current = op.serverVersion
+      lamportClock.current = Math.max(lamportClock.current, op.lamportTime ?? 0)
+      vectorClock.current = mergeVectorClocks(vectorClock.current, op.vectorClock ?? {})
       const pending = pendingOps.current.get(op.operationId)
 
       if (pending) {
@@ -108,41 +153,17 @@ export function useTiptapCollaboration({
           JSON.stringify(op.transformedPayload) !== JSON.stringify(pending.req.payload)
 
         if (needsReconcile && editor) {
-          console.log(`[collab] Reconciling echo v${op.serverVersion} (transformed)`)
-          isApplyingRemote.current = true
-          try {
-            const view = editor.view
-            let tr = view.state.tr
-            // Roll back the optimistic step
-            for (let i = pending.steps.length - 1; i >= 0; i--) {
-              const { step, beforeDoc } = pending.steps[i]
-              tr = tr.step(step.invert(beforeDoc))
-            }
-            view.dispatch(tr)
-
-            // Apply the server's version
-            if (op.operationType !== 'NO_OP') {
-              applyAcceptedOperation(editor, op)
-            }
-          } catch (e) {
-            console.warn('[collab] Reconcile failed:', e)
-          } finally {
-            isApplyingRemote.current = false
-          }
+          console.log(`[collab] Reconciling echo v${op.serverVersion} from server snapshot`)
+          void syncEditorFromServer().catch(e => console.warn('[collab] Reconcile sync failed:', e))
         }
         return
       }
 
       if (!editor) return
-      isApplyingRemote.current = true
-      try {
-        console.log(`[collab] Applying remote ${op.operationType} v${op.serverVersion}`)
-        applyAcceptedOperation(editor, op)
-      } finally {
-        isApplyingRemote.current = false
-      }
+      console.log(`[collab] Syncing remote ${op.operationType} v${op.serverVersion} from server snapshot`)
+      void syncEditorFromServer().catch(e => console.warn('[collab] Remote sync failed:', e))
     },
-    [editor, documentId, token],
+    [editor, documentId, token, syncEditorFromServer],
   )
 
   useEffect(() => {
@@ -150,6 +171,17 @@ export function useTiptapCollaboration({
   }, [onAcceptedOperation])
 
   return { onTransaction, onAcceptedOperation }
+}
+
+function mergeVectorClocks(
+  current: Record<string, number>,
+  incoming: Record<string, number>,
+): Record<string, number> {
+  const merged: Record<string, number> = { ...current }
+  for (const [key, value] of Object.entries(incoming)) {
+    merged[key] = Math.max(merged[key] ?? 0, value)
+  }
+  return merged
 }
 
 async function fetchGapFill(

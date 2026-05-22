@@ -1,19 +1,17 @@
 import type { DocumentCollaborator, Permission } from '../types/document'
-import { collaboratorsApi } from '../api/collaborators'
 
-const PERMISSIONS: Permission[] = ['READ', 'WRITE', 'ADMIN']
+const PERMISSIONS: Permission[] = ['READ', 'WRITE']
 
 interface Props {
-  documentId: string
   collaborator: DocumentCollaborator
-  onUpdated: () => void
+  onPermissionChange: (userId: string, permission: Permission) => Promise<void>
+  onRemove: (userId: string, username: string) => Promise<void>
 }
 
-export function CollaboratorRow({ documentId, collaborator: collab, onUpdated }: Props) {
+export function CollaboratorRow({ collaborator: collab, onPermissionChange, onRemove }: Props) {
   async function handlePermissionChange(permission: Permission) {
     try {
-      await collaboratorsApi.update(documentId, collab.userId, permission)
-      onUpdated()
+      await onPermissionChange(collab.userId, permission)
     } catch {
       alert('Failed to update permission')
     }
@@ -22,8 +20,7 @@ export function CollaboratorRow({ documentId, collaborator: collab, onUpdated }:
   async function handleRemove() {
     if (!confirm(`Remove ${collab.username}?`)) return
     try {
-      await collaboratorsApi.remove(documentId, collab.userId)
-      onUpdated()
+      await onRemove(collab.userId, collab.username)
     } catch {
       alert('Failed to remove collaborator')
     }

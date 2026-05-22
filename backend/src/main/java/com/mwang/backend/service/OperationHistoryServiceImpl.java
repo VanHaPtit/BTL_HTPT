@@ -109,6 +109,19 @@ public class OperationHistoryServiceImpl implements OperationHistoryService {
         return new AcceptedOperationResponse(
                 op.getOperationId(), documentId, op.getServerVersion(),
                 op.getOperationType(), payload, op.getActor().getId(),
-                op.getClientSessionId(), op.getCreatedAt());
+                op.getClientSessionId(), op.getCreatedAt(),
+                op.getLamportTime() != null ? op.getLamportTime() : 0L,
+                parseVectorClock(op.getVectorClock()));
+    }
+
+    private java.util.Map<String, Long> parseVectorClock(String serialized) {
+        if (serialized == null || serialized.isBlank()) {
+            return java.util.Map.of();
+        }
+        try {
+            return objectMapper.readValue(serialized, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception e) {
+            return java.util.Map.of();
+        }
     }
 }

@@ -7,12 +7,20 @@ export type OperationType =
   | 'SET_BLOCK_TYPE'
   | 'NO_OP'
 
+export type PresenceType =
+  | 'CURSOR_POSITION'
+  | 'DOCUMENT_SYNC'
+  | 'TYPING'
+  | 'IDLE'
+
 export interface SubmitOperationRequest {
   operationId: string
   clientSessionId: string
   baseVersion: number
   operationType: OperationType
   payload: unknown
+  clientLamportTime?: number
+  vectorClock?: Record<string, number>
 }
 
 export interface AcceptedOperationResponse {
@@ -23,6 +31,9 @@ export interface AcceptedOperationResponse {
   serverVersion: number
   operationType: OperationType
   transformedPayload: unknown
+  acceptedAt: string
+  lamportTime: number
+  vectorClock: Record<string, number>
 }
 
 export interface SessionMember {
@@ -40,8 +51,23 @@ export interface SessionSnapshot {
 }
 
 export interface PresenceEvent {
+  documentId: string
+  sessionId: string
   userId: string
   username: string
-  type: string
-  data: unknown
+  type: PresenceType
+  payload: Record<string, unknown>
+  occurredAt: string
+}
+
+export interface CursorPresencePayload {
+  anchor: number
+  head: number
+}
+
+export interface OperationHistoryPage {
+  documentId: string
+  sinceVersion: number
+  operations: AcceptedOperationResponse[]
+  hasMore: boolean
 }

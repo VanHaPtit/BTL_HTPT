@@ -1,6 +1,5 @@
 package com.mwang.backend.web.controller;
 
-import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.service.CollaborationBroadcastService;
 import com.mwang.backend.service.CollaborationPresenceService;
@@ -10,6 +9,7 @@ import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
 import com.mwang.backend.web.model.AcceptedOperationResponse;
 import com.mwang.backend.web.model.CollaborationSessionResponse;
 import com.mwang.backend.web.model.CollaborationSessionSnapshot;
+import com.mwang.backend.web.model.JoinSessionRequest;
 import com.mwang.backend.web.model.LeaveSessionRequest;
 import com.mwang.backend.web.model.PresenceEventResponse;
 import com.mwang.backend.web.model.PresenceType;
@@ -42,30 +42,28 @@ class CollaborationControllerTest {
     private CollaborationPresenceService presenceService;
     private CollaborationBroadcastService broadcastService;
     private DocumentOperationService documentOperationService;
-    private RedisCollaborationEventPublisher redisPublisher;
-
     @BeforeEach
     void setUp() {
         sessionService = mock(CollaborationSessionService.class);
         presenceService = mock(CollaborationPresenceService.class);
         broadcastService = mock(CollaborationBroadcastService.class);
         documentOperationService = mock(DocumentOperationService.class);
-        redisPublisher = mock(RedisCollaborationEventPublisher.class);
         collaborationController = new CollaborationController(
-                sessionService, presenceService, broadcastService, documentOperationService, redisPublisher);
+                sessionService, presenceService, broadcastService, documentOperationService);
     }
 
     @Test
     void joinSessionDelegatesToSessionServiceAndBroadcastsSessionSnapshot() {
         UUID documentId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
         CollaborationSessionSnapshot snapshot = snapshot(documentId);
         StompHeaderAccessor headerAccessor = accessor();
 
-        when(sessionService.join(eq(documentId), any())).thenReturn(snapshot);
+        when(sessionService.join(eq(documentId), eq(sessionId), any())).thenReturn(snapshot);
 
-        collaborationController.joinSession(documentId, headerAccessor);
+        collaborationController.joinSession(documentId, new JoinSessionRequest(sessionId), headerAccessor);
 
-        verify(sessionService).join(eq(documentId), eq(headerAccessor));
+        verify(sessionService).join(eq(documentId), eq(sessionId), eq(headerAccessor));
         verify(broadcastService).broadcastSessionSnapshot(documentId, snapshot);
         verifyNoMoreInteractions(broadcastService);
     }
@@ -134,7 +132,7 @@ class CollaborationControllerTest {
     }
 
     @Test
-    void submitOperationBroadcastsLocallyAndPublishesToRedis() {
+    void submitOperationDelegatesToServiceOnly() {
         UUID documentId = UUID.randomUUID();
         AcceptedOperationResponse response = new AcceptedOperationResponse(
                 UUID.randomUUID(), documentId, 1L,
@@ -150,8 +148,8 @@ class CollaborationControllerTest {
 
         collaborationController.submitOperation(documentId, request, headerAccessor);
 
-        verify(broadcastService).broadcastAcceptedOperation(documentId, response);
-        verify(redisPublisher).publishAcceptedOperation(documentId, response);
+        verify(documentOperationService).submitOperation(eq(documentId), eq(request), eq(headerAccessor));
+        verifyNoMoreInteractions(broadcastService);
     }
 
     private StompHeaderAccessor accessor() {

@@ -60,6 +60,17 @@ public class RedisCollaborationSessionStore implements CollaborationSessionStore
                 .toList();
     }
 
+    @Override
+    public List<CollaborationSessionResponse> removeByUserId(UUID documentId, UUID userId) {
+        List<CollaborationSessionResponse> removed = findByDocumentId(documentId).stream()
+                .filter(session -> session.userId().equals(userId))
+                .toList();
+        for (CollaborationSessionResponse session : removed) {
+            remove(documentId, session.sessionId());
+        }
+        return removed;
+    }
+
     private CollaborationSessionResponse deserialize(String serialized) {
         try {
             return objectMapper.readValue(serialized, CollaborationSessionResponse.class);

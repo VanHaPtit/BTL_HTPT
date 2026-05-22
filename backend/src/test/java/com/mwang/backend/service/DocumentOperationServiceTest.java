@@ -2,6 +2,8 @@ package com.mwang.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mwang.backend.collaboration.AcceptedOperationCommittedEvent;
+import com.mwang.backend.collaboration.AcceptedOperationOutboxService;
 import com.mwang.backend.collaboration.OperationTransformer;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentOperation;
@@ -9,7 +11,6 @@ import com.mwang.backend.domain.DocumentOperationType;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.domain.model.DocumentNode;
 import com.mwang.backend.domain.model.DocumentTree;
-import com.mwang.backend.kafka.AcceptedOperationDomainEvent;
 import com.mwang.backend.repositories.DocumentOperationRepository;
 import com.mwang.backend.repositories.DocumentRepository;
 import com.mwang.backend.service.exception.DocumentAccessDeniedException;
@@ -60,6 +61,8 @@ class DocumentOperationServiceTest {
     @Mock private OperationTransformer transformer;
     @Mock private ObjectMapper objectMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private AcceptedOperationOutboxService acceptedOperationOutboxService;
+    @Mock private DocumentCheckpointService checkpointService;
     @Mock private EntityManager entityManager;
     @Spy private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
@@ -195,6 +198,7 @@ class DocumentOperationServiceTest {
 
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
+        when(acceptedOperationOutboxService.enqueueAcceptedOperation(any())).thenReturn(UUID.randomUUID());
 
         AcceptedOperationResponse response = service.submitOperation(documentId, request, accessorWithSession);
 
@@ -235,6 +239,7 @@ class DocumentOperationServiceTest {
 
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
+        when(acceptedOperationOutboxService.enqueueAcceptedOperation(any())).thenReturn(UUID.randomUUID());
 
         AcceptedOperationResponse response = service.submitOperation(documentId, request, accessor);
 
@@ -270,20 +275,23 @@ class DocumentOperationServiceTest {
                 .children(new java.util.ArrayList<>(List.of(node))).build();
         when(objectMapper.readValue(document.getContent(), DocumentTree.class)).thenReturn(tree);
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"children\":[]}");
+        UUID outboxId = UUID.randomUUID();
+        when(acceptedOperationOutboxService.enqueueAcceptedOperation(any())).thenReturn(outboxId);
 
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
 
-        service.submitOperation(documentId, request, pubAccessor);
-
-        ArgumentCaptor<AcceptedOperationDomainEvent> captor =
-                ArgumentCaptor.forClass(AcceptedOperationDomainEvent.class);
-        verify(eventPublisher).publishEvent(captor.capture());
-        AcceptedOperationDomainEvent published = captor.getValue();
-        assertThat(published.response().operationId()).isEqualTo(operationId);
-        assertThat(published.response().documentId()).isEqualTo(documentId);
-        assertThat(published.response().serverVersion()).isEqualTo(1L);
-        assertThat(published.baseVersion()).isEqualTo(0L);
+        AcceptedOperationResponse resp = service.submitOperation(documentId, request, pubAccessor);
+        assertThat(resp.operationId()).isEqualTo(operationId);
+        assertThat(resp.documentId()).isEqualTo(documentId);
+        assertThat(resp.serverVersion()).isEqualTo(1L);
+        verify(acceptedOperationOutboxService).enqueueAcceptedOperation(any(AcceptedOperationResponse.class));
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue()).isInstanceOf(AcceptedOperationCommittedEvent.class);
+        AcceptedOperationCommittedEvent event = (AcceptedOperationCommittedEvent) eventCaptor.getValue();
+        assertThat(event.outboxId()).isEqualTo(outboxId);
+        assertThat(event.response().operationId()).isEqualTo(operationId);
     }
 
     @Test
@@ -307,6 +315,7 @@ class DocumentOperationServiceTest {
         service.submitOperation(documentId, request, accessor);
 
         verify(eventPublisher, never()).publishEvent(any());
+        verify(acceptedOperationOutboxService, never()).enqueueAcceptedOperation(any());
     }
 
     @Test
@@ -356,6 +365,7 @@ class DocumentOperationServiceTest {
         when(objectMapper.readValue(anyString(), eq(DocumentTree.class))).thenReturn(emptyTree);
         when(objectMapper.writeValueAsString(any())).thenReturn(treeJson);
         when(operationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(acceptedOperationOutboxService.enqueueAcceptedOperation(any())).thenReturn(UUID.randomUUID());
 
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
@@ -409,6 +419,7 @@ class DocumentOperationServiceTest {
         when(objectMapper.readValue(anyString(), eq(DocumentTree.class))).thenReturn(emptyTree);
         when(objectMapper.writeValueAsString(any())).thenReturn(treeJson);
         when(operationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(acceptedOperationOutboxService.enqueueAcceptedOperation(any())).thenReturn(UUID.randomUUID());
 
         SubmitOperationRequest request = new SubmitOperationRequest(
                 operationId, 0L, DocumentOperationType.INSERT_TEXT, payload);
@@ -431,6 +442,8 @@ class DocumentOperationServiceTest {
                 mock(OperationTransformer.class),
                 mock(ObjectMapper.class),
                 mock(ApplicationEventPublisher.class),
+                mock(AcceptedOperationOutboxService.class),
+                mock(DocumentCheckpointService.class),
                 mock(EntityManager.class),
                 prometheusRegistry);
 

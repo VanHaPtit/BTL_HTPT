@@ -6,28 +6,6 @@ services:
       - "16379:6379"   # đổi từ 6379 -> 16379
     command: ["redis-server", "--save", "", "--appendonly", "no"]
 
-  kafka:
-    image: apache/kafka:latest
-    restart: unless-stopped
-    ports:
-      - "19092:9092"   # đổi từ 9092 -> 19092
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:19092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-
   backend:
     build:
       context: .
@@ -40,12 +18,13 @@ services:
       SPRING_DATASOURCE_PASSWORD: collabpass
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET:-PZQhbm2pxG2uTlbcHMxwTB4amG59/+uK+nYbCV/4u4o=}
       SPRING_PROFILES_ACTIVE: dev
     depends_on:
-      - redis
-      - kafka
+      redis:
+        condition: service_started
+      mysql:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 10s
@@ -60,7 +39,21 @@ services:
       - "13000:80"   # đổi từ 3000 -> 13000
     depends_on:
       - backend
-
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: docsEngine
+      MYSQL_ROOT_PASSWORD: collabpass
+    ports:
+      - "33306:3306" # Đổi cổng ngoài để tránh trùng nếu máy bạn đã có MySQL
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pcollabpass"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 volumes:
-  kafka_data:
   postgres_data: # giữ lại volume cũ nếu cần, hoặc xóa đi
+  mysql_data:

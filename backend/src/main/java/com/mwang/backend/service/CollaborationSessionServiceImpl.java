@@ -47,11 +47,21 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
 
     @Override
     public CollaborationSessionSnapshot join(UUID documentId) {
-        return join(documentId, (SimpMessageHeaderAccessor) null);
+        return join(documentId, null, null);
+    }
+
+    @Override
+    public CollaborationSessionSnapshot join(UUID documentId, UUID requestedSessionId) {
+        return join(documentId, requestedSessionId, null);
     }
 
     @Override
     public CollaborationSessionSnapshot join(UUID documentId, SimpMessageHeaderAccessor headerAccessor) {
+        return join(documentId, null, headerAccessor);
+    }
+
+    @Override
+    public CollaborationSessionSnapshot join(UUID documentId, UUID requestedSessionId, SimpMessageHeaderAccessor headerAccessor) {
         User actor = currentUserProvider.requireCurrentUser(headerAccessor);
         Map<String, Object> sessionAttributes = headerAccessor != null ? headerAccessor.getSessionAttributes() : null;
         Document document = requireDocument(documentId);
@@ -59,7 +69,7 @@ public class CollaborationSessionServiceImpl implements CollaborationSessionServ
 
         Instant now = Instant.now();
         CollaborationSessionResponse session = new CollaborationSessionResponse(
-                UUID.randomUUID(),
+                requestedSessionId != null ? requestedSessionId : UUID.randomUUID(),
                 documentId,
                 actor.getId(),
                 actor.getUsername(),

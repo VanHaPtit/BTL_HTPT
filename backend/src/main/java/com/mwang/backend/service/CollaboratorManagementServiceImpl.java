@@ -1,9 +1,12 @@
 package com.mwang.backend.service;
 
 import com.mwang.backend.collaboration.AccessRevokedEvent;
+import com.mwang.backend.collaboration.CollaborationSessionStore;
+import com.mwang.backend.collaboration.RedisCollaborationEventPublisher;
 import com.mwang.backend.domain.Document;
 import com.mwang.backend.domain.DocumentCollaborator;
 import com.mwang.backend.domain.DocumentPermission;
+import com.mwang.backend.domain.DocumentVisibility;
 import com.mwang.backend.domain.User;
 import com.mwang.backend.repositories.DocumentCollaboratorRepository;
 import com.mwang.backend.repositories.DocumentRepository;
@@ -15,6 +18,7 @@ import com.mwang.backend.service.exception.InvalidCollaborationRequestException;
 import com.mwang.backend.service.exception.UserNotFoundException;
 import com.mwang.backend.web.mappers.DocumentMapper;
 import com.mwang.backend.web.model.DocumentCollaboratorSummary;
+import com.mwang.backend.web.model.CollaborationSessionSnapshot;
 import com.mwang.backend.web.model.DocumentResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +40,9 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
     private final CurrentUserProvider currentUserProvider;
     private final DocumentMapper documentMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final CollaborationSessionStore collaborationSessionStore;
+    private final CollaborationBroadcastService collaborationBroadcastService;
+    private final RedisCollaborationEventPublisher redisCollaborationEventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -71,6 +78,11 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
         authorizationService.assertCanAdmin(document, actor);
+        validateCollaboratorPermission(permission);
+        if (document.getVisibility() != DocumentVisibility.SHARED) {
+            throw new InvalidCollaborationRequestException(
+                    "Collaborators can only be invited when the document visibility is SHARED");
+        }
 
         User target = requireUser(targetUserId);
         if (document.getOwner().equals(target)) {
@@ -97,6 +109,7 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         User actor = currentUserProvider.requireCurrentUser(httpRequest);
         Document document = requireDocument(documentId);
         authorizationService.assertCanAdmin(document, actor);
+        validateCollaboratorPermission(permission);
 
         DocumentCollaborator entry = collaboratorRepository
                 .findByDocumentIdAndUserId(documentId, targetUserId)
@@ -117,10 +130,20 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         if (document.getOwner().getId().equals(targetUserId)) {
             throw new InvalidCollaborationRequestException("Cannot remove the document owner");
         }
-        if (!collaboratorRepository.existsByDocumentIdAndUserId(documentId, targetUserId)) {
-            throw new CollaboratorNotFoundException(documentId, targetUserId);
-        }
-        collaboratorRepository.deleteByDocumentIdAndUserId(documentId, targetUserId);
+        DocumentCollaborator entry = collaboratorRepository
+                .findByDocumentIdAndUserId(documentId, targetUserId)
+                .orElseThrow(() -> new CollaboratorNotFoundException(documentId, targetUserId));
+
+        document.getCollaborators().remove(entry);
+        documentRepository.saveAndFlush(document);
+
+        collaborationSessionStore.removeByUserId(documentId, targetUserId);
+        CollaborationSessionSnapshot snapshot = new CollaborationSessionSnapshot(
+                documentId,
+                collaborationSessionStore.findByDocumentId(documentId)
+        );
+        collaborationBroadcastService.broadcastSessionSnapshot(documentId, snapshot);
+        redisCollaborationEventPublisher.publishSessionSnapshot(documentId, snapshot);
         eventPublisher.publishEvent(new AccessRevokedEvent(documentId, targetUserId));
     }
 
@@ -142,8 +165,8 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
         // Remove new owner from collaborators (orphanRemoval handles DELETE on save)
         document.getCollaborators().remove(newOwnerEntry);
 
-        // Add old owner as ADMIN collaborator
-        document.addCollaborator(oldOwner, DocumentPermission.ADMIN);
+        // Keep the old owner with write access after transfer.
+        document.addCollaborator(oldOwner, DocumentPermission.WRITE);
 
         // Update ownership and persist all changes in one save
         document.setOwner(newOwner);
@@ -163,5 +186,14 @@ public class CollaboratorManagementServiceImpl implements CollaboratorManagement
     private User requireUser(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
+    }
+
+    private void validateCollaboratorPermission(DocumentPermission permission) {
+        if (permission == null) {
+            throw new InvalidCollaborationRequestException("Permission is required");
+        }
+        if (permission == DocumentPermission.ADMIN) {
+            throw new InvalidCollaborationRequestException("ADMIN permission is not supported for collaborators");
+        }
     }
 }
