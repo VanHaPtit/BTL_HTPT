@@ -8,6 +8,7 @@ import { RegisterPage } from './pages/RegisterPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DocumentSettingsPage } from './pages/DocumentSettingsPage'
 import { EditorPage } from './pages/EditorPage'
+import { ProfilePage } from './pages/ProfilePage'
 
 function App() {
   return (
@@ -30,6 +31,9 @@ function App() {
           } />
           <Route path="/documents/:id" element={
             <PrivateRoute><ErrorBoundary><EditorPage /></ErrorBoundary></PrivateRoute>
+          } />
+          <Route path="/profile" element={
+            <PrivateRoute><ErrorBoundary><ProfilePage /></ErrorBoundary></PrivateRoute>
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

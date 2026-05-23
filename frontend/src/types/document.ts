@@ -33,3 +33,13 @@ export interface DocumentPage {
   page: number
   size: number
 }
+
+export interface DocumentSaveHistory {
+  id: string
+  documentId: string
+  actorId: string
+  actorName: string
+  serverVersion: number
+  content: string
+  createdAt: string
+}

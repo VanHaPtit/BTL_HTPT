@@ -22,7 +22,7 @@ export function RegisterPage() {
       navigate('/')
     } catch (err) {
       if (axios.isAxiosError(err)) {
-        const code = err.response?.data?.code
+        const code = (err.response?.data as any)?.code
         if (code === 'USERNAME_ALREADY_EXISTS') {
           setError('Username is already taken')
         } else if (code === 'EMAIL_ALREADY_EXISTS') {

@@ -8,6 +8,7 @@ import { UserSearchCombobox } from '../components/UserSearchCombobox'
 import type { UserSummary } from '../api/users'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
+import { Sidebar } from '../components/Sidebar'
 
 export function DocumentSettingsPage() {
   const { id } = useParams<{ id: string }>()
@@ -117,20 +118,26 @@ export function DocumentSettingsPage() {
   if (!doc) return <div className="p-8 text-gray-400">Loading…</div>
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/')} className="text-sm text-blue-600 hover:underline">
-            &lt;- Back
+    <div className="flex h-screen w-full bg-[#f8fafc] font-sans overflow-hidden">
+      <Sidebar
+        documentId={id}
+        isOwner={doc.currentUserPermission === 'OWNER'}
+        onCreateNew={() => navigate('/')}
+      />
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-10">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate(`/documents/${id}`)} className="text-sm font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors">
+              &larr; Back to Editor
+            </button>
+            <h1 className="text-lg font-bold text-slate-800 truncate">{doc.title} - Settings</h1>
+          </div>
+          <button onClick={logout} className="text-sm font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg transition-colors">
+            Sign out
           </button>
-          <h1 className="text-lg font-semibold truncate">{doc.title} - Settings</h1>
-        </div>
-        <button onClick={logout} className="text-sm text-red-500 hover:underline">
-          Sign out
-        </button>
-      </header>
+        </header>
 
-      <main className="max-w-2xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-8">
+        <main className="flex-1 overflow-y-auto max-w-2xl mx-auto w-full px-4 md:px-6 py-6 md:py-8 space-y-8">
         {doc.currentUserPermission === 'OWNER' && (
           <section>
             <h2 className="text-sm font-semibold uppercase text-gray-500 mb-3">Document</h2>
@@ -240,6 +247,7 @@ export function DocumentSettingsPage() {
           <p className="text-sm text-gray-500">You do not have permission to manage this document.</p>
         )}
       </main>
+      </div>
     </div>
   )
 }

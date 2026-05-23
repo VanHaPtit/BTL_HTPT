@@ -19,11 +19,14 @@ import type {
 import { useCollaboration } from '../hooks/useCollaboration'
 import { useTiptapCollaboration } from '../hooks/useTiptapCollaboration'
 import { AccessRevokedOverlay } from '../components/AccessRevokedOverlay'
+import { Sidebar } from '../components/Sidebar'
 import { OperationHistoryPanel } from '../components/OperationHistoryPanel'
 import { PresenceBar } from '../components/PresenceBar'
 import { RemoteCursorLayer } from '../components/RemoteCursorLayer'
 import { SessionPanel } from '../components/SessionPanel'
+import { SaveHistoryModal } from '../components/SaveHistoryModal'
 import { parseBackendContent, serializeEditorContent } from '../utils/documentContent'
+
 
 interface RemoteCursorState {
   sessionId: string
@@ -44,6 +47,7 @@ export function EditorPage() {
   const [sessionSnapshot, setSessionSnapshot] = useState<SessionSnapshot | null>(null)
   const [cursorBySession, setCursorBySession] = useState<Record<string, RemoteCursorState>>({})
   const [operationHistory, setOperationHistory] = useState<AcceptedOperationResponse[]>([])
+  const [showSaveHistory, setShowSaveHistory] = useState(false)
   const [revoked, setRevoked] = useState(false)
   const sessionId = useRef(uuidv4()).current
   const currentVersion = useRef(0)
@@ -69,7 +73,7 @@ export function EditorPage() {
     let cancelled = false
     documentsApi
       .get(documentId)
-      .then(d => {
+      .then((d: any) => {
         if (cancelled) return
         setDoc(d)
         currentVersion.current = d.currentVersion
@@ -78,11 +82,10 @@ export function EditorPage() {
         const canEdit = d.currentUserPermission !== 'READ'
         editor.setEditable(canEdit)
 
-        if (d.content) {
-          editor.commands.setContent(parseBackendContent(d.content) as JSONContent)
-        }
+        // Always set content so even empty docs are initialized with the default paragraph
+        editor.commands.setContent(parseBackendContent(d.content) as JSONContent)
       })
-      .catch((err) => {
+      .catch((err: any) => {
         console.error('Failed to fetch document:', err)
         if (!cancelled) {
             const msg = err.response?.data?.message || 'Failed to load document.'
@@ -98,12 +101,12 @@ export function EditorPage() {
     if (!documentId) return
     let cancelled = false
     documentsApi.getOperations(documentId, { sinceVersion: 0, limit: 100 })
-      .then(page => {
+      .then((page: any) => {
         if (!cancelled) {
           setOperationHistory(page.operations)
         }
       })
-      .catch(err => {
+      .catch((err: any) => {
         console.warn('Failed to load operation history:', err)
       })
     return () => {
@@ -257,43 +260,8 @@ export function EditorPage() {
     }
   }, [documentId, editor, updatePresence])
 
-  useEffect(() => {
-    if (!editor || !documentId || doc?.currentUserPermission === 'READ') return
+  // Autosave has been removed. History is only recorded when the user explicitly clicks Save.
 
-    const scheduleAutosave = () => {
-      if (suppressAutosaveRef.current) return
-      if (autosaveTimeoutRef.current) {
-        window.clearTimeout(autosaveTimeoutRef.current)
-      }
-      autosaveTimeoutRef.current = window.setTimeout(async () => {
-        if (!doc) return
-        try {
-          const saved = await documentsApi.update(documentId, {
-            title: doc.title,
-            visibility: doc.visibility,
-            content: serializeEditorContent(editor.getJSON() as JSONContent),
-          })
-          setDoc(saved)
-          currentVersion.current = saved.currentVersion
-          publishPresence('DOCUMENT_SYNC' as PresenceType, {
-            currentVersion: saved.currentVersion,
-            updatedAt: saved.updatedAt,
-          })
-        } catch (error) {
-          console.warn('Autosave failed:', error)
-        }
-      }, 350)
-    }
-
-    editor.on('update', scheduleAutosave)
-    return () => {
-      editor.off('update', scheduleAutosave)
-      if (autosaveTimeoutRef.current) {
-        window.clearTimeout(autosaveTimeoutRef.current)
-        autosaveTimeoutRef.current = null
-      }
-    }
-  }, [doc, documentId, editor, publishPresence])
 
   async function handleManualSave() {
     if (!editor || !documentId || !doc) return
@@ -339,79 +307,138 @@ export function EditorPage() {
   const isOwner = doc.currentUserPermission === 'OWNER'
 
   return (
-    <div className="min-h-screen flex flex-col bg-[radial-gradient(circle_at_top,_#e0f2fe,_#f8fafc_32%,_#e2e8f0_100%)]">
+    <div className="flex h-screen w-full bg-[#f8fafc] font-sans">
       {revoked && <AccessRevokedOverlay />}
+      {showSaveHistory && <SaveHistoryModal documentId={documentId!} onClose={() => setShowSaveHistory(false)} />}
 
-      <header className="border-b border-slate-200 bg-slate-50/80 px-4 py-4 md:px-6">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link to="/" className="shrink-0 text-sm font-medium text-blue-600 hover:underline">
-              &lt;- Docs
+      {/* Sidebar */}
+      <Sidebar
+        documentId={documentId}
+        isOwner={isOwner}
+        onHistoryClick={() => setShowSaveHistory(true)}
+        activeEditorTab="editor"
+        onCreateNew={() => navigate('/')}
+      />
+
+      {/* Main Column */}
+      <main className="flex min-w-0 flex-1 flex-col h-screen overflow-hidden">
+        {/* Top Header */}
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="text-slate-400 hover:text-slate-600">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
             </Link>
-            <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold text-slate-900 md:text-lg">{doc.title}</h1>
-              <p className="text-xs text-slate-500">Version {currentVersion.current}</p>
+            <div>
+              <h1 className="text-[15px] font-semibold text-slate-900 leading-tight">{doc.title}</h1>
+              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                <span>Version {currentVersion.current}</span>
+                <span>•</span>
+                <span className="flex items-center gap-1.5 text-[#3b82f6] font-medium">
+                  <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-[#3b82f6]' : 'bg-slate-300'}`}></span>
+                  {connected ? '1 online' : 'Offline'}
+                </span>
+              </div>
             </div>
-            <span
-              className={`h-2.5 w-2.5 shrink-0 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-300'}`}
-              title={connected ? 'Connected' : 'Disconnected'}
-            />
           </div>
 
-          <div className="flex flex-col gap-3 lg:items-end">
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-              <PresenceBar members={members} currentUserId={user?.userId ?? ''} />
-              <SessionPanel members={members} currentUserId={user?.userId ?? ''} />
-              <OperationHistoryPanel operations={operationHistory} currentUserId={user?.userId ?? ''} />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {isOwner && (
-                <Link
-                  to={`/documents/${documentId}/settings`}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-800"
-                >
-                  Settings
-                </Link>
-              )}
-              {doc.currentUserPermission !== 'READ' && (
-                <button
-                  onClick={handleManualSave}
-                  className="rounded-full bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700"
-                >
-                  Save
-                </button>
-              )}
-              <button
-                onClick={logout}
-                className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-500 hover:border-red-300 hover:text-red-600"
-              >
-                Sign out
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-3 pl-2">
+              <div className="flex flex-col items-end">
+                <span className="text-[13px] font-semibold text-slate-900 leading-none mb-1">{user?.username || 'Hale'}</span>
+                <span className="text-[9px] font-bold text-indigo-600 uppercase leading-none">Free Plan Upgrade</span>
+              </div>
+              <button onClick={logout} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1e293b] text-sm font-semibold text-white">
+                {(user?.username || 'H').charAt(0).toUpperCase()}
               </button>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-4 py-8 md:px-8 md:py-10">
-          <div
-            ref={editorSurfaceRef}
-            className="relative rounded-[2rem] border border-slate-200/80 bg-white shadow-[0_24px_80px_-32px_rgba(15,23,42,0.35)]"
-          >
-            <RemoteCursorLayer
-              editor={editor}
-              containerRef={editorSurfaceRef}
-              presences={presenceEvents}
-              currentSessionId={sessionId}
-            />
-            <EditorContent
-              editor={editor}
-              className="prose prose-sm min-h-[32rem] max-w-none px-6 py-8 focus:outline-none md:px-10 md:py-10"
-            />
+        {/* Editor Area Wrapper */}
+        <div className="flex-1 overflow-y-auto bg-[#f8fafc] relative pb-20">
+          
+          {/* Floating Toolbar */}
+          <div className="sticky top-6 z-20 mx-auto flex w-fit items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-2 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+            <div className="flex items-center gap-1 pr-3">
+              <button 
+                onClick={() => editor?.chain().focus().toggleBold().run()} 
+                className={`flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 ${editor?.isActive('bold') ? 'bg-slate-100 text-slate-900' : 'text-slate-800'}`}
+              >
+                <span className="font-bold">B</span>
+              </button>
+              <button 
+                onClick={() => editor?.chain().focus().toggleItalic().run()} 
+                className={`flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 italic font-serif ${editor?.isActive('italic') ? 'bg-slate-100 text-slate-900' : 'text-slate-800'}`}
+              >
+                I
+              </button>
+              <button 
+                className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-800 font-semibold underline"
+              >
+                U
+              </button>
+            </div>
+            
+            <div className="h-5 w-px bg-slate-200"></div>
+            
+            <div className="flex items-center gap-1 px-3">
+              <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="15" y1="12" x2="3" y2="12"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+              </button>
+              <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="12" x2="3" y2="12"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>
+              </button>
+              <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div className="h-5 w-px bg-slate-200"></div>
+            
+            <div className="flex items-center gap-4 pl-3 pr-1">
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#6366f1]">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                {operationHistory.length} changes
+              </div>
+              
+              {doc.currentUserPermission !== 'READ' && (
+                <button
+                  onClick={handleManualSave}
+                  className="rounded-lg bg-[#1e293b] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-slate-900 transition-colors"
+                >
+                  Save Changes
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Document Surface */}
+          <div className="mx-auto mt-8 max-w-[850px] px-4 md:px-0">
+            <div ref={editorSurfaceRef} className="relative rounded-xl bg-white px-10 py-16 shadow-[0_2px_10px_rgba(0,0,0,0.02)] min-h-[850px]">
+              
+              {/* Document Header inside paper */}
+              <div className="mb-8 pl-4">
+                <h1 className="text-3xl font-bold text-slate-900 mb-6">{doc.title}</h1>
+              </div>
+
+              {/* Editor Content */}
+              <RemoteCursorLayer
+                editor={editor}
+                containerRef={editorSurfaceRef}
+                presences={presenceEvents}
+                currentSessionId={sessionId}
+              />
+              <div className="pl-4">
+                <EditorContent
+                  editor={editor}
+                  className="prose prose-slate max-w-none focus:outline-none prose-headings:font-bold prose-a:text-indigo-600"
+                />
+              </div>
+            </div>
+          </div>
+
         </div>
-      </div>
+      </main>
     </div>
   )
 }

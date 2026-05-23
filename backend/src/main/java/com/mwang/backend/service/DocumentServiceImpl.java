@@ -32,6 +32,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final CurrentUserProvider currentUserProvider;
     private final DocumentAuthorizationService documentAuthorizationService;
     private final DocumentMapper documentMapper;
+    private final com.mwang.backend.repositories.DocumentSaveHistoryRepository saveHistoryRepository;
 
     @Override
     @Transactional
@@ -44,6 +45,14 @@ public class DocumentServiceImpl implements DocumentService {
                 .owner(actor)
                 .visibility(defaultVisibility(request.visibility()))
                 .build());
+                
+        saveHistoryRepository.save(com.mwang.backend.domain.DocumentSaveHistory.builder()
+                .document(saved)
+                .actor(actor)
+                .content(saved.getContent())
+                .serverVersion(saved.getCurrentVersion())
+                .build());
+
         return documentMapper.toResponse(saved, "OWNER");
     }
 
@@ -89,6 +98,14 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         Document saved = documentRepository.save(document);
+        
+        saveHistoryRepository.save(com.mwang.backend.domain.DocumentSaveHistory.builder()
+                .document(saved)
+                .actor(actor)
+                .content(saved.getContent())
+                .serverVersion(saved.getCurrentVersion())
+                .build());
+
         return documentMapper.toResponse(saved, documentAuthorizationService.resolveEffectivePermission(saved, actor));
     }
 

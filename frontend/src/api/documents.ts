@@ -23,6 +23,9 @@ export const documentsApi = {
       .get<OperationHistoryPage>(`/documents/${id}/operations`, { params })
       .then(r => r.data),
 
+  getSaveHistory: (id: string) =>
+    apiClient.get<import('../types/document').DocumentSaveHistory[]>(`/documents/${id}/save-history`).then(r => r.data),
+
   delete: (id: string) =>
     apiClient.delete(`/documents/${id}`),
 }
