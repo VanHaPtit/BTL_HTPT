@@ -1,73 +1,51 @@
-# React + TypeScript + Vite
+# Giao diện Máy khách (Frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Đây là thư mục chứa toàn bộ mã nguồn giao diện (Frontend) của ứng dụng. Chịu trách nhiệm hiển thị trang web, cung cấp trình soạn thảo văn bản và kết nối trực tiếp với Máy chủ (Backend) qua cả luồng tĩnh (HTTP) và luồng thời gian thực (WebSocket).
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 1. Công nghệ sử dụng
 
-## React Compiler
+* **React.js:** Thư viện giao diện chính.
+* **Vite:** Công cụ build siêu tốc giúp khởi chạy dự án nhanh chóng.
+* **Tiptap Editor:** Trình soạn thảo văn bản mạnh mẽ (Rich-text Editor).
+* **Tailwind CSS:** Thiết kế giao diện (UI) hiện đại, gọn gàng.
+* **Axios & STOMP.js:** Xử lý kết nối gửi/nhận dữ liệu với Backend.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 2. Các chức năng chính do Frontend đảm nhận
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+* **Quản lý phiên đăng nhập:** Lưu trữ Token (JWT) để xác thực người dùng an toàn.
+* **Màn hình Dashboard:** Liệt kê các tài liệu cá nhân, cho phép tạo mới, xóa và chia sẻ quyền.
+* **Trình soạn thảo văn bản:** Bắt từng thao tác gõ phím của người dùng và đóng gói gửi lên Server qua đường WebSocket siêu tốc.
+* **Hiển thị trực tiếp:** Nhận tin nhắn từ Server và vẽ lên màn hình các chữ cái, con trỏ chuột, cùng danh sách những người đang online chung phòng.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 3. Cấu trúc thư mục chính
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+* `/src/api` : Chứa các hàm dùng để gọi API (HTTP) lên Backend (đăng nhập, lấy danh sách file).
+* `/src/components` : Chứa các nút bấm, thanh công cụ, bảng biểu dùng chung trong hệ thống.
+* `/src/pages` : Các màn hình lớn (Màn hình Đăng nhập, Màn hình Dashboard, Màn hình Editor).
+* `/src/collab` : Chứa logic cực kỳ quan trọng để dịch thao tác gõ phím thành tín hiệu gửi qua WebSocket.
+
+---
+
+## 4. Hướng dẫn chạy Frontend 
+
+Để chạy được giao diện lên máy tính, bạn cần cài đặt **Node.js (phiên bản 18 trở lên)**.
+
+**Bước 1:** Mở màn hình lệnh (Terminal) tại thư mục `frontend` này và cài đặt thư viện:
+
+```powershell
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+**Bước 2:** Chạy ứng dụng lên:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```powershell
+npm run dev
 ```
+
+**Lưu ý:** Giao diện sẽ chạy ở địa chỉ `http://localhost:5173`. Tuy nhiên, để đăng nhập và dùng được, bạn **BẮT BUỘC** phải bật thư mục `backend` chạy song song
