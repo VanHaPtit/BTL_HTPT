@@ -45,7 +45,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final AcceptedOperationOutboxService acceptedOperationOutboxService;
-    private final DocumentCheckpointService checkpointService;
+    // private final DocumentCheckpointService checkpointService;
     private final EntityManager entityManager;
     private final Counter conflictedCounter;
     private final Counter noopCounter;
@@ -70,7 +70,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             ObjectMapper objectMapper,
             ApplicationEventPublisher eventPublisher,
             AcceptedOperationOutboxService acceptedOperationOutboxService,
-            DocumentCheckpointService checkpointService,
+            // DocumentCheckpointService checkpointService,
             EntityManager entityManager,
             MeterRegistry meterRegistry) {
         this.documentRepository = documentRepository;
@@ -81,7 +81,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
         this.acceptedOperationOutboxService = acceptedOperationOutboxService;
-        this.checkpointService = checkpointService;
+        // this.checkpointService = checkpointService;
         this.entityManager = entityManager;
         this.meterRegistry = meterRegistry;
         this.conflictedCounter = meterRegistry.counter("operations.conflicted");
@@ -225,7 +225,7 @@ public class DocumentOperationServiceImpl implements DocumentOperationService {
             operationRepository.save(accepted);
             document.setCurrentVersion(nextVersion);
             documentRepository.save(document);
-            checkpointService.createCheckpointIfNeeded(document, nextVersion);
+            // checkpointService.createCheckpointIfNeeded(document, nextVersion);
         } finally {
             persistOperationTimer.record(System.nanoTime() - persistStart, java.util.concurrent.TimeUnit.NANOSECONDS);
         }

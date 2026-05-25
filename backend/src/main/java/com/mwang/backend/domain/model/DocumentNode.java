@@ -7,7 +7,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -20,6 +22,8 @@ public class DocumentNode {
     @Builder.Default
     private List<InlineFormat> formats = new ArrayList<>();
     private List<DocumentNode> children;
+    @Builder.Default
+    private Map<String, Object> attributes = new HashMap<>();
 
     public boolean isLeaf() {
         return children == null || children.isEmpty();

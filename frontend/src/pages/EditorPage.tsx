@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Image from '@tiptap/extension-image'
 import type { JSONContent } from '@tiptap/react'
 import { v4 as uuidv4 } from 'uuid'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
+import { apiClient } from '../api/client'
 import { documentsApi } from '../api/documents'
 import type { Document } from '../types/document'
 import type {
@@ -20,10 +22,7 @@ import { useCollaboration } from '../hooks/useCollaboration'
 import { useTiptapCollaboration } from '../hooks/useTiptapCollaboration'
 import { AccessRevokedOverlay } from '../components/AccessRevokedOverlay'
 import { Sidebar } from '../components/Sidebar'
-import { OperationHistoryPanel } from '../components/OperationHistoryPanel'
-import { PresenceBar } from '../components/PresenceBar'
 import { RemoteCursorLayer } from '../components/RemoteCursorLayer'
-import { SessionPanel } from '../components/SessionPanel'
 import { SaveHistoryModal } from '../components/SaveHistoryModal'
 import { parseBackendContent, serializeEditorContent } from '../utils/documentContent'
 
@@ -58,11 +57,12 @@ export function EditorPage() {
   const suppressAutosaveRef = useRef(false)
   const autosaveTimeoutRef = useRef<number | null>(null)
   const editorSurfaceRef = useRef<HTMLDivElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const token = user?.token ?? null
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Image],
     content: '',
     editable: true,
   })
@@ -279,6 +279,28 @@ export function EditorPage() {
     }
   }
 
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !editor) return
+    
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    try {
+      // addToast('Uploading image...', 'success') // could add a toast here
+      const { data: url } = await apiClient.post('/images/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      editor.chain().focus().setImage({ src: url }).run()
+      addToast('Image uploaded successfully', 'success')
+    } catch (err) {
+      console.error('Upload failed:', err)
+      addToast('Failed to upload image', 'error')
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   // Show connection state toasts
   useEffect(() => {
     if (!hasMounted.current) {
@@ -385,6 +407,10 @@ export function EditorPage() {
               <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="15" y1="12" x2="3" y2="12"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
               </button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current?.click()} className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+              </button>
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
               <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="12" x2="3" y2="12"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>
               </button>

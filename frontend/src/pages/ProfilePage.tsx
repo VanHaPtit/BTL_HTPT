@@ -18,6 +18,28 @@ export function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [isChanging, setIsChanging] = useState(false)
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsChanging(true)
+    try {
+      await apiClient.put('/users/me/password', { oldPassword, newPassword })
+      alert('Đổi mật khẩu thành công!')
+      setIsChangingPassword(false)
+      setOldPassword('')
+      setNewPassword('')
+    } catch (err: any) {
+      console.error(err)
+      alert(err.response?.data || 'Đổi mật khẩu thất bại')
+    } finally {
+      setIsChanging(false)
+    }
+  }
+
   useEffect(() => {
     apiClient.get<UserProfile>('/users/me')
       .then((res: any) => {
@@ -30,7 +52,6 @@ export function ProfilePage() {
       })
   }, [])
 
-  const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Chưa cập nhật'
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#e0f2fe,_#f8fafc_32%,_#e2e8f0_100%)] flex items-center justify-center p-4">
@@ -54,10 +75,7 @@ export function ProfilePage() {
             {user?.username?.charAt(0).toUpperCase() || 'H'}
           </div>
 
-          <h1 className="text-3xl font-black text-slate-800 mb-2">{profile?.username || user?.username || 'Hale'}</h1>
-          <p className="text-sm text-slate-500 font-medium mb-8">
-            User ID: <span className="text-slate-400 font-mono text-[10px] break-all">{profile?.id || user?.userId}</span>
-          </p>
+          <h1 className="text-3xl font-black text-slate-800 mb-8">{profile?.username || user?.username || 'Hale'}</h1>
 
           {loading ? (
             <div className="flex justify-center p-4">
@@ -66,27 +84,58 @@ export function ProfilePage() {
           ) : (
             <div className="space-y-3 mb-8 text-left">
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Họ và tên</p>
-                <p className="text-sm font-bold text-slate-700">{fullName}</p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Email</p>
                 <p className="text-sm font-bold text-slate-700">{profile?.email || 'Chưa cập nhật'}</p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center border border-slate-100">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trạng thái</span>
-                <span className={`text-xs font-black px-3 py-1 rounded-lg ${profile?.status === 'ACTIVE' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                  {profile?.status || 'UNKNOWN'}
-                </span>
               </div>
             </div>
           )}
 
           <div className="space-y-4">
-            <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center border border-slate-100">
-              <span className="text-sm font-bold text-slate-500">Gói tài khoản</span>
-              <span className="text-sm font-black text-indigo-600 bg-indigo-100 px-3 py-1 rounded-lg">MIỄN PHÍ</span>
-            </div>
+
+            {/* Change password form toggle */}
+            {!isChangingPassword ? (
+              <button 
+                onClick={() => setIsChangingPassword(true)}
+                className="w-full py-3.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-2xl font-bold transition-all shadow-sm active:scale-95 mt-2"
+              >
+                Đổi mật khẩu
+              </button>
+            ) : (
+              <form onSubmit={handleChangePassword} className="space-y-3 mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <input 
+                  type="password" 
+                  required 
+                  placeholder="Mật khẩu cũ" 
+                  value={oldPassword} 
+                  onChange={e => setOldPassword(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400"
+                />
+                <input 
+                  type="password" 
+                  required 
+                  placeholder="Mật khẩu mới" 
+                  value={newPassword} 
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400"
+                />
+                <div className="flex gap-2 pt-1">
+                  <button 
+                    type="button" 
+                    onClick={() => { setIsChangingPassword(false); setOldPassword(''); setNewPassword(''); }}
+                    className="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold text-sm transition-all"
+                  >
+                    Hủy
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={isChanging}
+                    className="flex-1 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold text-sm transition-all disabled:opacity-50"
+                  >
+                    {isChanging ? 'Đang lưu...' : 'Lưu'}
+                  </button>
+                </div>
+              </form>
+            )}
 
             <button 
               onClick={() => { logout(); navigate('/login') }}

@@ -62,7 +62,7 @@ class DocumentOperationServiceTest {
     @Mock private ObjectMapper objectMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AcceptedOperationOutboxService acceptedOperationOutboxService;
-    @Mock private DocumentCheckpointService checkpointService;
+    // @Mock private DocumentCheckpointService checkpointService;
     @Mock private EntityManager entityManager;
     @Spy private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
@@ -443,7 +443,7 @@ class DocumentOperationServiceTest {
                 mock(ObjectMapper.class),
                 mock(ApplicationEventPublisher.class),
                 mock(AcceptedOperationOutboxService.class),
-                mock(DocumentCheckpointService.class),
+                // mock(DocumentCheckpointService.class),
                 mock(EntityManager.class),
                 prometheusRegistry);
 

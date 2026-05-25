@@ -11,6 +11,7 @@ interface BackendNode {
   text?: string
   formats?: BackendInlineFormat[]
   children?: BackendNode[]
+  attributes?: Record<string, unknown>
 }
 
 interface BackendTree {
@@ -87,6 +88,13 @@ function fromBackendTree(tree: BackendTree): JSONContent {
 }
 
 function nodeToEditorBlock(node: BackendNode): JSONContent {
+  if (node.type === 'image') {
+    return {
+      type: 'image',
+      attrs: node.attributes,
+    }
+  }
+
   const type = normalizeEditorBlockType(node.type)
   const text = node.text ?? ''
   const content = buildTextContent(text, node.formats ?? [])
@@ -153,6 +161,13 @@ function toBackendTree(content: JSONContent): BackendTree {
 }
 
 function blockToBackendNode(block: JSONContent): BackendNode {
+  if (block.type === 'image') {
+    return {
+      type: 'image',
+      attributes: block.attrs,
+    }
+  }
+
   const textNodes = flattenTextNodes(block.content ?? [])
   let cursor = 0
   const formats: BackendInlineFormat[] = []

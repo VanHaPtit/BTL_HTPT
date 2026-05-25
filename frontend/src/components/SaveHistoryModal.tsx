@@ -10,11 +10,22 @@ interface Props {
   onClose: () => void
 }
 
-function extractRawText(json: any): string {
+function extractRawText(json: any, imageMap: Map<string, string>, reverseImageMap: Map<string, string>): string {
   if (!json) return ''
   if (typeof json === 'string') return json
   
   let text = ''
+  
+  if (json.type === 'image' && json.attrs?.src) {
+    const src = json.attrs.src;
+    let id = reverseImageMap.get(src);
+    if (!id) {
+      id = `__IMG${imageMap.size}__`;
+      imageMap.set(id, src);
+      reverseImageMap.set(src, id);
+    }
+    text += ` ${id} `
+  }
   
   if (typeof json.text === 'string') {
     text += json.text
@@ -22,7 +33,7 @@ function extractRawText(json: any): string {
   
   const children = json.content || json.children || []
   if (Array.isArray(children)) {
-    text += children.map(extractRawText).join('')
+    text += children.map((c: any) => extractRawText(c, imageMap, reverseImageMap)).join('')
   }
   
   if (json.type === 'paragraph' || json.type?.startsWith('heading')) {
@@ -34,6 +45,19 @@ function extractRawText(json: any): string {
   }
   
   return text
+}
+
+function renderDiffText(text: string, imageMap: Map<string, string>) {
+  const parts = text.split(/(__IMG\d+__)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('__IMG') && part.endsWith('__')) {
+      const src = imageMap.get(part);
+      if (src) {
+        return <img key={i} src={src} alt="content" className="max-w-sm my-2 rounded shadow-sm border border-slate-200 inline-block" />
+      }
+    }
+    return <span key={i}>{part}</span>
+  })
 }
 
 export function SaveHistoryModal({ documentId, onClose }: Props) {
@@ -55,9 +79,12 @@ export function SaveHistoryModal({ documentId, onClose }: Props) {
     // Previous entry is at selectedIndex + 1 since list is sorted desc
     const prevEntry = historyList[selectedIndex + 1]
     
+    const imageMap = new Map<string, string>()
+    const reverseImageMap = new Map<string, string>()
+
     let currentText = ''
     try {
-      currentText = extractRawText(JSON.parse(currentEntry.content))
+      currentText = extractRawText(JSON.parse(currentEntry.content), imageMap, reverseImageMap)
     } catch {
       currentText = currentEntry.content
     }
@@ -65,17 +92,17 @@ export function SaveHistoryModal({ documentId, onClose }: Props) {
     let prevText = ''
     if (prevEntry) {
       try {
-        prevText = extractRawText(JSON.parse(prevEntry.content))
+        prevText = extractRawText(JSON.parse(prevEntry.content), imageMap, reverseImageMap)
       } catch {
         prevText = prevEntry.content
       }
     }
 
     if (!prevEntry) {
-      return [{ value: currentText, added: false, removed: false }]
+      return { diffs: [{ value: currentText, added: false, removed: false }], imageMap }
     }
 
-    return diffWordsWithSpace(prevText, currentText)
+    return { diffs: diffWordsWithSpace(prevText, currentText), imageMap }
   }, [historyList, selectedIndex])
 
   return (
@@ -132,16 +159,16 @@ export function SaveHistoryModal({ documentId, onClose }: Props) {
               </div>
             ) : (
               <div className="prose max-w-none whitespace-pre-wrap font-sans text-slate-800">
-                {diffResult?.map((part, i) => {
+                {diffResult?.diffs.map((part: any, i: number) => {
                   if (part.added) {
                     // New content
-                    return <span key={i}>{part.value}</span>
+                    return <span key={i}>{renderDiffText(part.value, diffResult.imageMap)}</span>
                   }
                   if (part.removed) {
                     // Old content (bôi đỏ nhạt #fe9292)
-                    return <span key={i} style={{ backgroundColor: '#fe9292', textDecoration: 'line-through' }} className="text-red-900">{part.value}</span>
+                    return <span key={i} style={{ backgroundColor: '#fe9292', textDecoration: 'line-through' }} className="text-red-900">{renderDiffText(part.value, diffResult.imageMap)}</span>
                   }
-                  return <span key={i}>{part.value}</span>
+                  return <span key={i}>{renderDiffText(part.value, diffResult.imageMap)}</span>
                 })}
               </div>
             )}

@@ -15,6 +15,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.ResponseEntity;
+
 @Validated
 @RestController
 @RequestMapping("/api/users")
@@ -22,10 +27,28 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final PasswordEncoder passwordEncoder;
 
-    public UserController(UserRepository userRepository, CurrentUserProvider currentUserProvider) {
+    public UserController(UserRepository userRepository, CurrentUserProvider currentUserProvider, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.currentUserProvider = currentUserProvider;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    public static class ChangePasswordRequest {
+        public String oldPassword;
+        public String newPassword;
+    }
+
+    @PutMapping("/me/password")
+    public ResponseEntity<String> changePassword(HttpServletRequest request, @RequestBody ChangePasswordRequest req) {
+        User user = currentUserProvider.requireCurrentUser(request);
+        if (!passwordEncoder.matches(req.oldPassword, user.getPasswordHash())) {
+            return ResponseEntity.badRequest().body("Mật khẩu cũ không chính xác.");
+        }
+        user.setPasswordHash(passwordEncoder.encode(req.newPassword));
+        userRepository.save(user);
+        return ResponseEntity.ok("Đổi mật khẩu thành công.");
     }
 
     @GetMapping("/me")
