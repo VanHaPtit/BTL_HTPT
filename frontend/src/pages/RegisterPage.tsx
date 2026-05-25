@@ -19,7 +19,7 @@ export function RegisterPage() {
     setIsLoading(true)
     try {
       await register(username, email, password)
-      navigate('/')
+      navigate('/login')
     } catch (err) {
       if (axios.isAxiosError(err)) {
         const code = (err.response?.data as any)?.code

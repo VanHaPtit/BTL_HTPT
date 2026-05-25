@@ -6,6 +6,7 @@ import { DocumentCard } from '../components/DocumentCard';
 import { CreateDocumentModal } from '../components/CreateDocumentModal';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
+import { ProfileModal } from '../components/ProfileModal';
 // --- ICONS ---
 const SearchIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,6 +88,7 @@ export function DashboardPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   // Xử lý Debounce tìm kiếm
@@ -171,13 +173,9 @@ export function DashboardPage() {
             <div className="flex items-center gap-3 pl-4">
               <div className="text-right hidden md:block">
                 <p className="text-sm font-bold text-slate-800 leading-none">{user?.username || 'Hale'}</p>
-                <p className="text-[10px] font-bold mt-1">
-                  <span className="text-slate-400">FREE PLAN</span>{' '}
-                  <span className="text-indigo-500 cursor-pointer hover:underline ml-1">Upgrade</span>
-                </p>
               </div>
               <div 
-                onClick={() => navigate('/profile')}
+                onClick={() => setShowProfile(true)}
                 className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-white font-bold text-sm shadow-sm ring-2 ring-white cursor-pointer hover:ring-indigo-400 transition-all"
               >
                 {user?.username?.charAt(0).toUpperCase() || 'H'}
@@ -361,6 +359,7 @@ export function DashboardPage() {
           onClose={() => setShowCreate(false)}
         />
       )}
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
     </div>
   );
 }

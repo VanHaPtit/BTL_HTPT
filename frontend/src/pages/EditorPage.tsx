@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
+import { ResizableImage } from '../extensions/ResizableImage'
 import type { JSONContent } from '@tiptap/react'
 import { v4 as uuidv4 } from 'uuid'
 import { useAuth } from '../contexts/AuthContext'
@@ -22,6 +22,7 @@ import { useCollaboration } from '../hooks/useCollaboration'
 import { useTiptapCollaboration } from '../hooks/useTiptapCollaboration'
 import { AccessRevokedOverlay } from '../components/AccessRevokedOverlay'
 import { Sidebar } from '../components/Sidebar'
+import { ProfileModal } from '../components/ProfileModal'
 import { RemoteCursorLayer } from '../components/RemoteCursorLayer'
 import { SaveHistoryModal } from '../components/SaveHistoryModal'
 import { parseBackendContent, serializeEditorContent } from '../utils/documentContent'
@@ -47,6 +48,7 @@ export function EditorPage() {
   const [cursorBySession, setCursorBySession] = useState<Record<string, RemoteCursorState>>({})
   const [operationHistory, setOperationHistory] = useState<AcceptedOperationResponse[]>([])
   const [showSaveHistory, setShowSaveHistory] = useState(false)
+  const [showProfile, setShowProfile] = useState(false)
   const [revoked, setRevoked] = useState(false)
   const sessionId = useRef(uuidv4()).current
   const currentVersion = useRef(0)
@@ -62,7 +64,7 @@ export function EditorPage() {
   const token = user?.token ?? null
 
   const editor = useEditor({
-    extensions: [StarterKit, Image],
+    extensions: [StarterKit, ResizableImage],
     content: '',
     editable: true,
   })
@@ -332,6 +334,7 @@ export function EditorPage() {
     <div className="flex h-screen w-full bg-[#f8fafc] font-sans">
       {revoked && <AccessRevokedOverlay />}
       {showSaveHistory && <SaveHistoryModal documentId={documentId!} onClose={() => setShowSaveHistory(false)} />}
+      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
 
       {/* Sidebar */}
       <Sidebar
@@ -364,12 +367,27 @@ export function EditorPage() {
           </div>
 
           <div className="flex items-center gap-5">
-            <div className="flex items-center gap-3 pl-2">
+            {isOwner && (
+              <button 
+                onClick={() => navigate(`/documents/${documentId}/settings`)}
+                className="flex items-center gap-2 rounded-full bg-indigo-50 px-4 py-1.5 text-sm font-semibold text-indigo-600 hover:bg-indigo-100 transition-colors"
+                title="Share Document"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="5" r="3"></circle>
+                  <circle cx="6" cy="12" r="3"></circle>
+                  <circle cx="18" cy="19" r="3"></circle>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                </svg>
+                Share
+              </button>
+            )}
+            <div className="flex items-center gap-3 pl-2 border-l border-slate-200">
               <div className="flex flex-col items-end">
                 <span className="text-[13px] font-semibold text-slate-900 leading-none mb-1">{user?.username || 'Hale'}</span>
-                <span className="text-[9px] font-bold text-indigo-600 uppercase leading-none">Free Plan Upgrade</span>
               </div>
-              <button onClick={logout} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1e293b] text-sm font-semibold text-white">
+              <button onClick={() => setShowProfile(true)} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1e293b] text-sm font-semibold text-white">
                 {(user?.username || 'H').charAt(0).toUpperCase()}
               </button>
             </div>
@@ -394,29 +412,15 @@ export function EditorPage() {
               >
                 I
               </button>
-              <button 
-                className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-800 font-semibold underline"
-              >
-                U
-              </button>
             </div>
             
             <div className="h-5 w-px bg-slate-200"></div>
             
             <div className="flex items-center gap-1 px-3">
-              <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="15" y1="12" x2="3" y2="12"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
-              </button>
-              <button onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current?.click()} className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
+              <button onMouseDown={e => e.preventDefault()} onClick={() => fileInputRef.current?.click()} className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600" title="Upload Image">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
               </button>
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-              <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="12" x2="3" y2="12"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>
-              </button>
-              <button className="flex h-8 w-8 items-center justify-center rounded hover:bg-slate-100 text-slate-600">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-              </button>
             </div>
 
             <div className="h-5 w-px bg-slate-200"></div>

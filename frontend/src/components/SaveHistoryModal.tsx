@@ -16,15 +16,18 @@ function extractRawText(json: any, imageMap: Map<string, string>, reverseImageMa
   
   let text = ''
   
-  if (json.type === 'image' && json.attrs?.src) {
-    const src = json.attrs.src;
-    let id = reverseImageMap.get(src);
-    if (!id) {
-      id = `__IMG${imageMap.size}__`;
-      imageMap.set(id, src);
-      reverseImageMap.set(src, id);
+  if (json.type === 'image') {
+    const attrs = json.attrs || json.attributes || {};
+    if (attrs.src) {
+      const src = attrs.src;
+      let id = reverseImageMap.get(src);
+      if (!id) {
+        id = `__IMG${imageMap.size}__`;
+        imageMap.set(id, src);
+        reverseImageMap.set(src, id);
+      }
+      text += ` ${id} `
     }
-    text += ` ${id} `
   }
   
   if (typeof json.text === 'string') {
@@ -135,9 +138,6 @@ export function SaveHistoryModal({ documentId, onClose }: Props) {
                     <div className="text-xs text-slate-500">
                       Saved by: <span className="font-medium">{entry.actorName}</span>
                     </div>
-                    <div className="text-xs text-slate-400">
-                      Version: {entry.serverVersion}
-                    </div>
                   </li>
                 ))}
               </ul>
@@ -149,13 +149,13 @@ export function SaveHistoryModal({ documentId, onClose }: Props) {
         <div className="flex-1 flex flex-col bg-white overflow-hidden">
           <div className="border-b border-slate-200 px-6 py-3 bg-white shadow-sm">
             <h3 className="text-base font-semibold text-slate-800">
-              {selectedIndex !== null ? `Changes on ${new Date(historyList[selectedIndex].createdAt).toLocaleString()}` : 'Select a version to view changes'}
+              {selectedIndex !== null ? `Changes on ${new Date(historyList[selectedIndex].createdAt).toLocaleString()}` : 'Select an entry to view changes'}
             </h3>
           </div>
           <div className="flex-1 overflow-y-auto p-6">
             {selectedIndex === null ? (
               <div className="flex h-full items-center justify-center text-slate-400">
-                Select a version from the left panel.
+                Select an entry from the left panel.
               </div>
             ) : (
               <div className="prose max-w-none whitespace-pre-wrap font-sans text-slate-800">

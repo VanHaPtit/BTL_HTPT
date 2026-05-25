@@ -32,9 +32,6 @@ function App() {
           <Route path="/documents/:id" element={
             <PrivateRoute><ErrorBoundary><EditorPage /></ErrorBoundary></PrivateRoute>
           } />
-          <Route path="/profile" element={
-            <PrivateRoute><ErrorBoundary><ProfilePage /></ErrorBoundary></PrivateRoute>
-          } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </AuthProvider>
