@@ -55,5 +55,4 @@ services:
       timeout: 5s
       retries: 10
 volumes:
-  postgres_data: # giữ lại volume cũ nếu cần, hoặc xóa đi
   mysql_data:
